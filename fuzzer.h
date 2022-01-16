@@ -28,6 +28,7 @@ limitations under the License.
 #include "minimizer.h"
 #include "range.h"
 #include "rangetracker.h"
+#include "colorizer.h"
 
 #ifdef linux
 #include "sancovinstrumentation.h"
@@ -68,6 +69,7 @@ public:
     Mutator *mutator;
     Instrumentation * instrumentation;
     Minimizer* minimizer;
+    Colorizer* colorizer;
     RangeTracker* range_tracker;
 
     //std::string target_cmd;
@@ -160,6 +162,7 @@ protected:
   virtual Instrumentation *CreateInstrumentation(int argc, char **argv, ThreadContext *tc);
   virtual SampleDelivery* CreateSampleDelivery(int argc, char** argv, ThreadContext* tc);
   virtual Minimizer* CreateMinimizer(int argc, char** argv, ThreadContext* tc);
+  virtual Colorizer* CreateColorizer(int argc, char** argv, ThreadContext* tc);
   virtual RangeTracker* CreateRangeTracker(int argc, char** argv, ThreadContext* tc);
   virtual bool OutputFilter(Sample *original_sample, Sample *output_sample, ThreadContext* tc);
   virtual void AdjustSamplePriority(ThreadContext *tc, SampleQueueEntry *entry, int found_new_coverage);
@@ -173,10 +176,11 @@ protected:
   
   bool MagicOutputFilter(Sample *original_sample, Sample *output_sample, const char *magic, size_t magic_size);
 
-  RunResult RunSample(ThreadContext *tc, Sample *sample, int *has_new_coverage, bool trim, bool report_to_server, uint32_t init_timeout, uint32_t timeout, Sample *original_sample);
+  RunResult RunSample(ThreadContext *tc, Sample *sample, int *has_new_coverage, bool trim, bool colorize, bool report_to_server, uint32_t init_timeout, uint32_t timeout, Sample *original_sample);
   RunResult RunSampleAndGetCoverage(ThreadContext* tc, Sample* sample, Coverage* coverage, uint32_t init_timeout, uint32_t timeout);
   RunResult TryReproduceCrash(ThreadContext* tc, Sample* sample, uint32_t init_timeout, uint32_t timeout);
   void MinimizeSample(ThreadContext *tc, Sample *sample, Coverage* stable_coverage, uint32_t init_timeout, uint32_t timeout);
+  void ColorizeSample(ThreadContext *tc, Sample *sample, Coverage* stable_coverage, uint32_t init_timeout, uint32_t timeout);
 
   int InterestingSample(ThreadContext *tc, Sample *sample, Coverage *stableCoverage, Coverage *variableCoverage);
 
@@ -230,6 +234,8 @@ protected:
   double acceptable_crash_ratio;
 
   bool minimize_samples;
+  
+  bool colorize_samples;
 
   bool keep_samples_in_memory;
 

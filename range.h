@@ -26,3 +26,27 @@ public:
   }
 };
 
+class SampleRange : public Range {
+public:
+  SampleRange() { }
+
+  SampleRange(size_t from, size_t to) {
+    this->from = from;
+    this->to = to;
+  }
+  
+  size_t length() {
+    return to - from;
+  }
+  
+  bool operator<(const SampleRange& other) const {
+    if (((SampleRange*)this)->length() == ((SampleRange)other).length()) {
+      return from < other.from;
+    }
+    
+    return ((SampleRange*)this)->length() < ((SampleRange)other).length();
+  }
+};
+
+
+

@@ -101,6 +101,8 @@ void Fuzzer::ParseOptions(int argc, char **argv) {
   crash_reproduce_retries = GetIntOption("-crash_retry", argc, argv, DEFAULT_CRASH_REPRODUCE_RETRIES);
 
   minimize_samples = GetBinaryOption("-minimize_samples", argc, argv, true);
+  
+  colorize_samples = GetBinaryOption("-colorize_samples", argc, argv, true);
 
   keep_samples_in_memory = GetBinaryOption("-keep_samples_in_memory", argc, argv, true);
 
@@ -324,7 +326,7 @@ RunResult Fuzzer::TryReproduceCrash(ThreadContext* tc, Sample* sample, uint32_t 
   return result;
 }
 
-RunResult Fuzzer::RunSample(ThreadContext *tc, Sample *sample, int *has_new_coverage, bool trim, bool report_to_server, uint32_t init_timeout, uint32_t timeout, Sample *original_sample) {
+RunResult Fuzzer::RunSample(ThreadContext *tc, Sample *sample, int *has_new_coverage, bool trim, bool colorize, bool report_to_server, uint32_t init_timeout, uint32_t timeout, Sample *original_sample) {
   if (has_new_coverage) {
     *has_new_coverage = 0;
   }
@@ -379,6 +381,12 @@ RunResult Fuzzer::RunSample(ThreadContext *tc, Sample *sample, int *has_new_cove
     }
 
     if (trim && minimize_samples) MinimizeSample(tc, sample, &stableCoverage, init_timeout, timeout);
+    
+//    Sample min_sample = *sample;
+    
+    if (colorize && colorize_samples) ColorizeSample(tc, sample, &stableCoverage, init_timeout, timeout);
+    
+//    Sample col_sample = *sample;
 
     std::vector<Range> ranges;
     if (track_ranges) {
@@ -399,6 +407,16 @@ RunResult Fuzzer::RunSample(ThreadContext *tc, Sample *sample, int *has_new_cove
     string filename = string("sample_") + fileindex;
     string outfile = DirJoin(sample_dir, filename);
     sample->Save(outfile.c_str());
+    
+//    string base = string("/Users/alex/Documents/career/university/University of Cambridge/Thesis/Initial fuzzer/color2");
+//    filename = string("min_") + fileindex;
+//    outfile = DirJoin(base, filename);
+//    min_sample.Save(outfile.c_str());
+//
+//    filename = string("col_") + fileindex;
+//    outfile = DirJoin(base, filename);
+//    col_sample.Save(outfile.c_str());
+    
     num_samples++;
     output_mutex.Unlock();
 
@@ -476,6 +494,37 @@ void Fuzzer::MinimizeSample(ThreadContext *tc, Sample *sample, Coverage* stable_
       test_sample = *sample;
     } else {
       minimizer->ReportSuccess(&test_sample, context);
+      *sample = test_sample;
+    }
+  }
+
+  delete context;
+}
+
+void Fuzzer::ColorizeSample(ThreadContext *tc, Sample *sample, Coverage* stable_coverage, uint32_t init_timeout, uint32_t timeout) {
+  Colorizer* colorizer = tc->colorizer;
+  
+  if (!colorizer) return;
+
+  ColorizerContext* context = colorizer->CreateContext(sample);
+
+  Sample test_sample = *sample;
+
+  while (1) {
+    if (!colorizer->ColorizeStep(&test_sample, context)) break;
+
+    Coverage test_coverage;
+    RunResult result = RunSampleAndGetCoverage(tc, &test_sample, &test_coverage, init_timeout, timeout);
+
+    if (result != OK) break;
+
+    if (!IsReturnValueInteresting(tc->instrumentation->GetReturnValue())
+        || !CoverageContains(test_coverage, *stable_coverage))
+    {
+      colorizer->ReportFail(&test_sample, context);
+      test_sample = *sample;
+    } else {
+      colorizer->ReportSuccess(&test_sample, context);
       *sample = test_sample;
     }
   }
@@ -696,7 +745,7 @@ void Fuzzer::FuzzJob(ThreadContext* tc, FuzzerJob* job) {
     }
 
     int has_new_coverage;
-    RunResult result = RunSample(tc, &mutated_sample, &has_new_coverage, true, true, init_timeout, timeout, entry->sample);
+    RunResult result = RunSample(tc, &mutated_sample, &has_new_coverage, true, true, true, init_timeout, timeout, entry->sample);
     AdjustSamplePriority(tc, entry, has_new_coverage);
     tc->mutator->NotifyResult(result, has_new_coverage);
 
@@ -735,7 +784,7 @@ void Fuzzer::FuzzJob(ThreadContext* tc, FuzzerJob* job) {
 void Fuzzer::ProcessSample(ThreadContext* tc, FuzzerJob* job) {
   int has_new_coverage = 0;
   job->sample->EnsureLoaded();
-  RunResult result = RunSample(tc, job->sample, &has_new_coverage, false, false, init_timeout, corpus_timeout, NULL);
+  RunResult result = RunSample(tc, job->sample, &has_new_coverage, false, false, false, init_timeout, corpus_timeout, NULL);
   if (result == CRASH) {
     WARN("Input sample resulted in a crash");
   } else if (result == HANG) {
@@ -895,6 +944,7 @@ Fuzzer::ThreadContext *Fuzzer::CreateThreadContext(int argc, char **argv, int th
   tc->instrumentation = CreateInstrumentation(argc, argv, tc);
   tc->sampleDelivery = CreateSampleDelivery(argc, argv, tc);
   tc->minimizer = CreateMinimizer(argc, argv, tc);
+  tc->colorizer = CreateColorizer(argc, argv, tc);
   tc->range_tracker = CreateRangeTracker(argc, argv, tc);
   tc->coverage_initialized = false;
   
@@ -985,6 +1035,11 @@ RangeTracker* Fuzzer::CreateRangeTracker(int argc, char** argv, ThreadContext* t
 Minimizer* Fuzzer::CreateMinimizer(int argc, char** argv, ThreadContext* tc) {
   SimpleTrimmer* trimmer = new SimpleTrimmer();
   return trimmer;
+}
+
+Colorizer* Fuzzer::CreateColorizer(int argc, char** argv, ThreadContext* tc) {
+  SimpleColorizer* colorizer = new SimpleColorizer();
+  return colorizer;
 }
 
 bool Fuzzer::OutputFilter(Sample *original_sample, Sample *output_sample, ThreadContext* tc) {

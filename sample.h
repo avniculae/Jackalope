@@ -59,6 +59,8 @@ public:
   void Resize(size_t new_size);
   
   void Crop(size_t from, size_t to, Sample* out);
+  
+  void Randomize(size_t from, size_t to);
 
   size_t FindFirstDiff(Sample &other);
 
