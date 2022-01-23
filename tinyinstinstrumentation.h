@@ -23,6 +23,7 @@ limitations under the License.
 #include "instrumentation.h"
 
 class LiteCov;
+class ModuleCovData;
 
 class TinyInstInstrumentation : public Instrumentation {
 public:
@@ -32,6 +33,7 @@ public:
 
   RunResult Run(int argc, char** argv, uint32_t init_timeout, uint32_t timeout) override;
   RunResult RunWithCrashAnalysis(int argc, char** argv, uint32_t init_timeout, uint32_t timeout) override;
+  RunResult RunWithI2SInstrumentation(int argc, char** argv, uint32_t init_timeout, uint32_t timeout) override;
 
   void CleanTarget() override;
 
@@ -39,6 +41,9 @@ public:
   void GetCoverage(Coverage &coverage, bool clear_coverage) override;
   void ClearCoverage() override;
   void IgnoreCoverage(Coverage &coverage) override;
+  
+  void ClearI2SData() override;
+  std::vector<I2SRecord*> GetI2SRecords(bool clear_i2s) override;
 
   uint64_t GetReturnValue() override;
 

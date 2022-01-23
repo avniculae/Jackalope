@@ -22,6 +22,8 @@ limitations under the License.
 #include "runresult.h"
 #include "mutex.h"
 #include "range.h"
+#include "fuzzer.h"
+#include "sampledelivery.h"
 
 #include <vector>
 #include <set>
@@ -598,4 +600,18 @@ public:
 protected:
 
   std::vector<Range> *ranges;
+};
+
+class InputToStateMutator : public Mutator {
+public:
+  InputToStateMutator(Fuzzer::ThreadContext *tc) {
+    this->tc = tc;
+  }
+  
+  bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override;
+  
+  void RunSampleWithI2SInstrumentation(Sample *inout_sample);
+  
+protected:
+  Fuzzer::ThreadContext *tc;
 };

@@ -21,6 +21,8 @@ limitations under the License.
 #include "coverage.h"
 #include "runresult.h"
 
+
+
 class Instrumentation {
 public:
   virtual ~Instrumentation() { }
@@ -31,6 +33,10 @@ public:
   virtual RunResult RunWithCrashAnalysis(int argc, char** argv, uint32_t init_timeout, uint32_t timeout) {
     return Run(argc, argv, init_timeout, timeout);
   }
+  
+  virtual RunResult RunWithI2SInstrumentation(int argc, char** argv, uint32_t init_timeout, uint32_t timeout) {
+    return Run(argc, argv, init_timeout, timeout);
+  }
 
   virtual void CleanTarget() = 0;
 
@@ -38,6 +44,9 @@ public:
   virtual void GetCoverage(Coverage &coverage, bool clear_coverage) = 0;
   virtual void ClearCoverage() = 0;
   virtual void IgnoreCoverage(Coverage &coverage) = 0;
+  
+  virtual void ClearI2SData() = 0;
+  virtual std::vector<I2SRecord*> GetI2SRecords(bool clear_i2s) = 0;
 
   virtual std::string GetCrashName() { return "crash"; };
 

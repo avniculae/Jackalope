@@ -459,3 +459,53 @@ bool RangeMutator::Mutate(Sample* inout_sample, PRNG* prng, std::vector<Sample*>
   return true;
 }
 
+
+bool InputToStateMutator::Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) {
+  printf("\n\n");
+  printf("======================== I2S Mutate BEGIN ========================\n");
+  Coverage stableCoverage;
+  
+  printf("----- GetStableCoverage -----\n");
+  tc->fuzzer->GetStableCoverage(tc, inout_sample, tc->fuzzer->init_timeout, tc->fuzzer->timeout, &stableCoverage);
+  
+  printf("----- Colorize -----\n");
+  tc->fuzzer->ColorizeSample(tc, inout_sample, &stableCoverage, tc->fuzzer->init_timeout, tc->fuzzer->timeout);
+  
+  printf("----- RunSampleWithI2SInstrumentation -----\n");
+  RunSampleWithI2SInstrumentation(inout_sample);
+  
+  printf("======================== I2S Mutate END ========================\n");
+  printf("\n\n");
+}
+
+void InputToStateMutator::RunSampleWithI2SInstrumentation(Sample *inout_sample) {
+  if (!tc->sampleDelivery->DeliverSample(inout_sample)) {
+    WARN("Error delivering sample, retrying with a clean target");
+    tc->instrumentation->CleanTarget();
+    if (!tc->sampleDelivery->DeliverSample(inout_sample)) {
+      FATAL("Repeatedly failed to deliver sample");
+    }
+  }
+  
+  RunResult result = tc->instrumentation->RunWithI2SInstrumentation(tc->target_argc, tc->target_argv, tc->fuzzer->init_timeout, tc->fuzzer->timeout);
+  if (result != OK) {
+    FATAL("RunWithI2SInstrumentation returned %d\n", result);
+  }
+  
+  std::vector<I2SRecord*> collected_i2s = tc->instrumentation->GetI2SRecords(true);
+  
+  printf("Collected I2S Mappings\n");
+  printf("----------------------\n");
+  for (auto &record : collected_i2s) {
+    printf("<-- Record -->\n");
+    for (int op_index = 0; op_index < 2; ++op_index) {
+      printf("Operand index %d: ", op_index);
+      for (int byte_index = 0; byte_index < record->op_length; ++byte_index) {
+        printf("0x%02hhx ", record->op_val[op_index][byte_index]);
+      }
+      printf("\n");
+    }
+    
+    delete record;
+  }
+}

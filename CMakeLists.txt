@@ -43,6 +43,8 @@ endif()
 add_library(fuzzerlib STATIC
   client.cpp
   client.h
+  colorizer.cpp
+  colorizer.h
   directory.cpp
   directory.h
   fuzzer.cpp

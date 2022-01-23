@@ -42,6 +42,8 @@ Mutator * BinaryFuzzer::CreateMutator(int argc, char **argv, ThreadContext *tc) 
                                             false);
 
   int nrounds = GetIntOption("-iterations_per_round", argc, argv, 1000);
+  
+  bool input_to_state = GetBinaryOption("-input_to_state", argc, argv, false);
 
   // a pretty simple mutation strategy
 
@@ -58,6 +60,9 @@ Mutator * BinaryFuzzer::CreateMutator(int argc, char **argv, ThreadContext *tc) 
   pselect->AddMutator(new BlockFlipMutator(1, 64, true), 0.1);
   pselect->AddMutator(new BlockDuplicateMutator(1, 128, 1, 8), 0.1);
   pselect->AddMutator(new InterestingValueMutator(true), 0.1);
+  if (input_to_state) {
+    pselect->AddMutator(new InputToStateMutator(tc), 0.1);
+  }
 
   // SpliceMutator is not compatible with -keep_samples_in_memory=0
   // as it requires other samples in memory besides the one being
