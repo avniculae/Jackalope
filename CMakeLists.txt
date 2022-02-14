@@ -49,6 +49,8 @@ add_library(fuzzerlib STATIC
   directory.h
   fuzzer.cpp
   fuzzer.h
+  inputtostate.cpp
+  inputtostate.h
   instrumentation.cpp
   instrumentation.h
   mutator.cpp
