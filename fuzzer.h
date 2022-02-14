@@ -104,7 +104,7 @@ protected:
 
   class SampleQueueEntry {
   public:
-    SampleQueueEntry() : sample(NULL), context(NULL),
+    SampleQueueEntry() : sample(NULL), colorized_sample(NULL), context(NULL),
       priority(0), sample_index(0), num_runs(0),
       num_crashes(0), num_hangs(0), num_newcoverage(0),
       discarded(0) {}
@@ -113,6 +113,7 @@ protected:
     void Load(FILE *fp);
     
     Sample *sample;
+    Sample *colorized_sample;
     std::string sample_filename;
     MutatorSampleContext *context;
     std::vector<Range> ranges;
@@ -181,6 +182,7 @@ protected:
   RunResult TryReproduceCrash(ThreadContext* tc, Sample* sample, uint32_t init_timeout, uint32_t timeout);
   void MinimizeSample(ThreadContext *tc, Sample *sample, Coverage* stable_coverage, uint32_t init_timeout, uint32_t timeout);
   void ColorizeSample(ThreadContext *tc, Sample *sample, Coverage* stable_coverage, uint32_t init_timeout, uint32_t timeout);
+  void ColorizeSample(ThreadContext *tc, Sample *sample);
 
   int InterestingSample(ThreadContext *tc, Sample *sample, Coverage *stableCoverage, Coverage *variableCoverage);
 

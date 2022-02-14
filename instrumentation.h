@@ -45,6 +45,9 @@ public:
   virtual void ClearCoverage() = 0;
   virtual void IgnoreCoverage(Coverage &coverage) = 0;
   
+  virtual void EnableFullCoverage() = 0;
+  virtual void DisableFullCoverage() = 0;
+  
   virtual void ClearI2SData() = 0;
   virtual std::vector<I2SRecord*> GetI2SRecords(bool clear_i2s) = 0;
 

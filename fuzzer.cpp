@@ -203,6 +203,11 @@ void Fuzzer::Run(int argc, char **argv) {
     
     printf("\nTotal execs: %lld\nUnique samples: %lld (%lld discarded)\nCrashes: %lld (%lld unique)\nHangs: %lld\nOffsets: %zu\nExecs/s: %lld\n", total_execs, num_samples, num_samples_discarded, num_crashes, num_unique_crashes, num_hangs, num_offsets, (total_execs - last_execs) / secs_to_sleep);
     last_execs = total_execs;
+    
+    if (dry_run) {
+      printf("Dry run done");
+      exit(0);
+    }
   }
 }
 
@@ -413,7 +418,14 @@ RunResult Fuzzer::RunSample(ThreadContext *tc, Sample *sample, int *has_new_cove
 
     SampleQueueEntry *new_entry = new SampleQueueEntry();
     Sample *new_sample = new Sample(*sample);
+    Sample *colorized_sample = new Sample(*sample);
+    ColorizeSample(tc, colorized_sample, &stableCoverage, init_timeout, timeout);
+    
+//    new_sample->PrettyPrint("Sample");
+//    colorized_sample->PrettyPrint("Colorized Sample");
+    
     new_entry->sample = new_sample;
+    new_entry->colorized_sample = colorized_sample;
     new_entry->context = tc->mutator->CreateSampleContext(new_entry->sample);
     if(TrackHotOffsets()) {
       if (keep_samples_in_memory) {
@@ -517,6 +529,18 @@ void Fuzzer::ColorizeSample(ThreadContext *tc, Sample *sample, Coverage* stable_
   delete context;
 }
 
+void Fuzzer::ColorizeSample(ThreadContext *tc, Sample *sample) {
+  tc->instrumentation->EnableFullCoverage();
+  tc->instrumentation->CleanTarget();
+  
+  Coverage stableCoverage;
+  GetStableCoverage(tc, sample, tc->fuzzer->init_timeout, tc->fuzzer->timeout, &stableCoverage);
+  
+  ColorizeSample(tc, sample, &stableCoverage, init_timeout, timeout);
+  
+  tc->instrumentation->DisableFullCoverage();
+  tc->instrumentation->CleanTarget();
+}
 
 int Fuzzer::InterestingSample(ThreadContext *tc, Sample *sample, Coverage *stableCoverage, Coverage *variableCoverage) {
   coverage_mutex.Lock();
@@ -637,12 +661,7 @@ void Fuzzer::SynchronizeAndGetJob(ThreadContext* tc, FuzzerJob* job) {
   }
 
   // create a job according to the state
-  if ((state == FUZZING) && dry_run) {
-    printf("Dry run done");
-    exit(0);
-  }
-
-  if (state == FUZZING) {
+  if (state == FUZZING && !dry_run) {
     if (sample_queue.empty()) {
       job->type = WAIT;
     } else {
@@ -724,7 +743,8 @@ void Fuzzer::FuzzJob(ThreadContext* tc, FuzzerJob* job) {
 
   while (1) {
     Sample mutated_sample = *entry->sample;
-    if (!tc->mutator->Mutate(&mutated_sample, tc->prng, tc->all_samples_local)) break;
+    Sample colorized_sample = *entry->colorized_sample;
+    if (!tc->mutator->Mutate(&mutated_sample, &colorized_sample, tc->prng, tc->all_samples_local)) break;
     if (mutated_sample.size > Sample::max_size) {
       continue;
     }
@@ -873,6 +893,8 @@ void Fuzzer::RestoreState(ThreadContext *tc) {
     string outfile = DirJoin(sample_dir, entry->sample_filename);
     sample->Load(outfile.c_str());
     entry->sample = sample;
+    entry->colorized_sample = new Sample(*sample);
+    ColorizeSample(tc, entry->colorized_sample);
     entry->context = tc->mutator->CreateSampleContext(sample);
     tc->mutator->LoadContext(entry->context, fp);
 
@@ -1082,7 +1104,7 @@ void Fuzzer::GetStableCoverage(ThreadContext *tc, Sample *sample, uint32_t init_
 
   if (initialCoverage.empty()) return result;
 
-  // printf("found new coverage: \n");
+//   printf("found new coverage: \n");
   // PrintCoverage(initialCoverage);
 
   // the sample returned new coverage

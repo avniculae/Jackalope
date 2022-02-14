@@ -61,7 +61,7 @@ Mutator * BinaryFuzzer::CreateMutator(int argc, char **argv, ThreadContext *tc) 
   pselect->AddMutator(new BlockDuplicateMutator(1, 128, 1, 8), 0.1);
   pselect->AddMutator(new InterestingValueMutator(true), 0.1);
   if (input_to_state) {
-    pselect->AddMutator(new InputToStateMutator(tc), 0.1);
+    pselect->AddMutator(new InputToStateMutator(tc), 0.001);
   }
 
   // SpliceMutator is not compatible with -keep_samples_in_memory=0

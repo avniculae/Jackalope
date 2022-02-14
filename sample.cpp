@@ -176,6 +176,12 @@ void Sample::Randomize(size_t from, size_t to) {
   }
 }
 
+void Sample::Replace(size_t from, size_t to, char *bytes) {
+  for (int i = from; i < to; ++i) {
+    this->bytes[i] = bytes[i-from];
+  }
+}
+
 size_t Sample::FindFirstDiff(Sample &other) {
   size_t minsize = size;
   if(other.size < minsize) minsize = other.size;
@@ -289,4 +295,12 @@ size_t SampleTrie::AddSample(Sample *sample) {
   }
   
   sample_trie_mutex.Unlock();
+}
+
+void Sample::PrettyPrint(const char *sample_name) {
+  printf("\n-------%s------\n", sample_name);
+  for (int i = 0; i < size; ++i) {
+    printf("0x%02hhx ", bytes[i]);
+  }
+  printf("\n---------------------\n\n");
 }

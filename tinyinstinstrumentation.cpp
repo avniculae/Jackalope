@@ -171,6 +171,14 @@ void TinyInstInstrumentation::ClearI2SData() {
   instrumentation->ClearI2SData();
 }
 
+void TinyInstInstrumentation::EnableFullCoverage() {
+  instrumentation->EnableFullCoverage();
+}
+
+void TinyInstInstrumentation::DisableFullCoverage() {
+  instrumentation->DisableFullCoverage();
+}
+
 std::vector<I2SRecord*> TinyInstInstrumentation::GetI2SRecords(bool clear_i2s) {
   return instrumentation->GetI2SRecords(clear_i2s);
 }
