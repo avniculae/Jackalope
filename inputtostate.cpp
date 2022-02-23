@@ -24,57 +24,50 @@ uint64_t InputToStateMutator::GetI2SCode(I2SRecord *records) {
   return code;
 }
 
+void InputToStateMutator::UpdateI2SBranchInfo(std::vector<I2SRecord*> i2s_records) {
+  for (auto &i2s_record : i2s_records) {
+    size_t i2s_address = i2s_record->bb_address + i2s_record->bb_offset;
+    if (i2s_records_info.count(i2s_address) == 0) {
+      i2s_records_info[i2s_address] = (I2SRecordInfo*)malloc(sizeof(I2SRecordInfo));
+    }
+    
+    i2s_records_info[i2s_address]->hit_branches |= (1 << i2s_record->BranchPath());
+  }
+}
+
 bool InputToStateMutator::Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
                                  std::vector<Sample *> &all_samples) {
-//  printf("before %d\n", inout_sample->size);
-//  printf("\n\n");
-//  printf("======================== I2S Mutate BEGIN ========================\n");
-//
-//  printf("----- RunSampleWithI2SInstrumentation -----\n");
-  std::vector<I2SRecord*> i2s_records = RunSampleWithI2SInstrumentation(inout_sample);
+
+  printf("======================== I2S Mutate BEGIN ========================\n");
+  inout_sample->PrettyPrint("inout");
+  colorized_sample->PrettyPrint("col");
+
+  std::pair<RunResult, std::vector<I2SRecord*>> i2s_run_pair = RunSampleWithI2SInstrumentation(inout_sample);
+  if (i2s_run_pair.first != OK) {
+    return false;
+  }
+  std::vector<I2SRecord*> i2s_records = i2s_run_pair.second;
+
+  i2s_run_pair = RunSampleWithI2SInstrumentation(colorized_sample);
+  if (i2s_run_pair.first != OK) {
+    *inout_sample = *colorized_sample;
+    return false;
+  }
+  std::vector<I2SRecord*> colorized_i2s_records = i2s_run_pair.second;
   
-//  printf("----- RunSampleWithI2SInstrumentation -----\n");
-  std::vector<I2SRecord*> colorized_i2s_records = RunSampleWithI2SInstrumentation(colorized_sample);
+  UpdateI2SBranchInfo(i2s_records);
   
-//  printf("----- Candidate Records -----\n");
-  std::vector<I2SRecord*> candidate_records = GetCandidateRecords(colorized_sample, i2s_records, colorized_i2s_records);
-//  for (auto &record : candidate_records) {
-//    printf("<-- Record -->\n");
-//    for (int op_index = 0; op_index < 2; ++op_index) {
-//      printf("Operand index %d: ", op_index);
-//      for (int byte_index = 0; byte_index < record->op_length; ++byte_index) {
-//        printf("0x%02hhx ", record->op_val[op_index][byte_index]);
-//      }
-//      printf("\n");
-//    }
-//  }
+  std::vector<I2SMutation> i2s_mutations = GetMutations(inout_sample, colorized_sample, i2s_records, colorized_i2s_records);
   
+  printf("----- Mutations -----\n");
+  for (auto &mutation : i2s_mutations) {
+    mutation.PrettyPrint();
+  }
+  printf("\n\n");
   
-//  printf("----- Fixing Input -----\n");
-  for (auto *record : candidate_records) {
-    for (auto &encoder : encoders) {
-      std::vector<uint8_t> encoded_pattern = encoder->Encode(record->op_val[0]);
-      std::vector<uint8_t> encoded_mutation = encoder->Encode(record->op_val[1]);
-      std::vector<size_t> matching_positions = GetMatchingPositions(colorized_sample, encoded_pattern);
-      if (matching_positions.size() > 0) {
-        
-//        printf("--> Putting: ");
-//        for (int i = 0; i < encoded_mutation.size(); ++i) {
-//          printf("0x%02hhx ", encoded_mutation[i]);
-//        }
-//
-//        printf("at ");
-        
-        for (auto &position : matching_positions) {
-//          printf("%zd ", position);
-          inout_sample->Replace(position, position + encoded_pattern.size(), (char *)encoded_mutation.data());
-        }
-        
-//        printf("\n");
-        
-        break;
-      }
-    }
+  for (auto &mutation : i2s_mutations) {
+    inout_sample->Replace(mutation.from, mutation.from + mutation.bytes.size(), (char *)mutation.bytes.data());
+    colorized_sample->Replace(mutation.from, mutation.from + mutation.bytes_col.size(), (char *)mutation.bytes_col.data());
   }
   
   for (auto &record : i2s_records) {
@@ -85,15 +78,12 @@ bool InputToStateMutator::Mutate(Sample *inout_sample, Sample *colorized_sample,
     delete record;
   }
   
-//  *inout_sample = *colorized_sample;
-  
-//  printf("======================== I2S Mutate END ========================\n");
-//  printf("\n\n");
+  printf("======================== I2S Mutate END ========================\n");
   
   return true;
 }
 
-std::vector<I2SRecord*> InputToStateMutator::RunSampleWithI2SInstrumentation(Sample *inout_sample) {
+std::pair<RunResult, std::vector<I2SRecord*>> InputToStateMutator::RunSampleWithI2SInstrumentation(Sample *inout_sample) {
   if (!tc->sampleDelivery->DeliverSample(inout_sample)) {
     WARN("Error delivering sample, retrying with a clean target");
     tc->instrumentation->CleanTarget();
@@ -104,29 +94,16 @@ std::vector<I2SRecord*> InputToStateMutator::RunSampleWithI2SInstrumentation(Sam
   
   RunResult result = tc->instrumentation->RunWithI2SInstrumentation(tc->target_argc, tc->target_argv, tc->fuzzer->init_timeout, tc->fuzzer->timeout);
   if (result != OK) {
-    FATAL("RunWithI2SInstrumentation returned %d\n", result);
+    return {result, std::vector<I2SRecord*>()};
   }
   
   std::vector<I2SRecord*> i2s_records = tc->instrumentation->GetI2SRecords(true);
   
-//  printf("Collected I2S Mappings\n");
-//  printf("----------------------\n");
-//  printf("%d\n", i2s_records.size());
-//  for (auto &record : i2s_records) {
-//    printf("<-- Record -->\n");
-//    for (int op_index = 0; op_index < 2; ++op_index) {
-//      printf("Operand index %d: ", op_index);
-//      for (int byte_index = 0; byte_index < record->op_length; ++byte_index) {
-//        printf("0x%02hhx ", record->op_val[op_index][byte_index]);
-//      }
-//      printf("\n");
-//    }
-//  }
-  
-  return i2s_records;
+  return {result, i2s_records};
 }
 
-std::vector<I2SRecord*> InputToStateMutator::GetCandidateRecords(Sample *inout_sample,
+std::vector<I2SMutation> InputToStateMutator::GetMutations(Sample *inout_sample,
+                                                           Sample *colorized_sample,
                                                                  std::vector<I2SRecord*> i2s_records,
                                                                  std::vector<I2SRecord*> colorized_i2s_records) {
   std::unordered_map<uint64_t, I2SRecord*> code_to_record;
@@ -135,7 +112,11 @@ std::vector<I2SRecord*> InputToStateMutator::GetCandidateRecords(Sample *inout_s
     code_to_record[GetI2SCode(record)] = record;
   }
   
-  std::vector<I2SRecord*> candidate_records;
+  colorized_sample->PrettyPrint("col");
+  
+  std::vector<I2SMutation> i2s_mutations;
+  
+  std::reverse(colorized_i2s_records.begin(), colorized_i2s_records.end());
   for (auto &colorized_record: colorized_i2s_records) {
     I2SRecord *record = (code_to_record.count(GetI2SCode(colorized_record)) > 0) ? code_to_record[GetI2SCode(colorized_record)] : NULL;
     if (record == NULL) {
@@ -147,20 +128,47 @@ std::vector<I2SRecord*> InputToStateMutator::GetCandidateRecords(Sample *inout_s
       continue;
     }
     
-    if (record->op_val[1] != colorized_record->op_val[1]) {
-      colorized_record->op_val[0].swap(colorized_record->op_val[1]);
+    record->PrettyPrint();
+    colorized_record->PrettyPrint();
+    
+    for (int i = 0; i < 2; i++, colorized_record->op_val[0].swap(colorized_record->op_val[1]),
+        record->op_val[0].swap(record->op_val[1])) {
+      
+      if (record->op_val[0] == colorized_record->op_val[0]) {
+        continue;
+      }
+      
+      for (auto &encoder : encoders) {
+        if (encoder->Encode(record->op_val[0]) == encoder->Encode(record->op_val[1], record)) {
+          continue;
+        }
+        
+        std::vector<size_t> matching_positions = GetMatchingPositions(inout_sample, encoder->Encode(record->op_val[0]));
+        
+        std::vector<size_t> matching_positions_col = GetMatchingPositions(colorized_sample, encoder->Encode(colorized_record->op_val[0]));
+        
+        std::vector<size_t> common_positions;
+        std::set_intersection(matching_positions.begin(),matching_positions.end(),
+                              matching_positions_col.begin(),matching_positions_col.end(),
+                              back_inserter(common_positions));
+        
+        
+        // !!!! Pay attention here.
+        for (auto &pos : common_positions) {
+          i2s_mutations.push_back(
+                I2SMutation(pos,
+                            encoder->Encode(record->op_val[1], record),
+                            encoder->Encode(colorized_record->op_val[1], colorized_record)));
+        }
+      }
     }
     
-    for (auto &encoder : encoders) {
-      std::vector<size_t> matching_positions = GetMatchingPositions(inout_sample, encoder->Encode(colorized_record->op_val[0]));
-      if (matching_positions.size() > 0) {
-        candidate_records.push_back(colorized_record);
-        break;
-      }
+    if (i2s_mutations.size() > 0) {
+      return i2s_mutations;
     }
   }
   
-  return candidate_records;
+  return i2s_mutations;
 }
 
 bool InputToStateMutator::Match(uint8_t *sample, uint8_t *pattern, int size) {
@@ -197,4 +205,40 @@ std::vector<uint8_t> ZextEncoder::Encode(std::vector<uint8_t> bytes) {
   return bytes;
 }
 
+std::vector<uint8_t> Encoder::AdjustBytes(std::vector<uint8_t> bytes, I2SRecord *i2s_record) {
+  if (bytes.size() == 0) {
+    return bytes;
+  }
+  
+  int adjust;
+  switch (i2s_record->type) {
+    case CMPB:
+    case CMPL:
+//      printf("CMPB CMPL\n");
+      adjust = -1;
+      break;
+      
+    case CMPA:
+    case CMPG:
+//      printf("CMPA CMPG\n");
+      adjust = 1;
+      break;
+      
+    default:
+//      printf("plm\n");
+      adjust = 0;
+  }
+  
+//  if (ShouldTakeReversedPath(i2s_record)) {
+////    printf("aha\n");
+//    adjust *= -1;
+//  }
+
+  
+//  if (adjust != 0) {
+//    printf("ADJUST %d\n", adjust);
+//  }
+  bytes[0] += adjust;
+  return bytes;
+}
 

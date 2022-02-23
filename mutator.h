@@ -57,6 +57,7 @@ public:
   virtual bool GenerateSample(Sample* sample, PRNG* prng) { return false; }
   virtual void AddMutator(Mutator *mutator) { child_mutators.push_back(mutator); }
   virtual void SetRanges(std::vector<Range>* ranges) { }
+  virtual bool IsContinuousMode() { return false; }
 
 protected:
   // a helper function to get a random chunk of sample (with size samplesize)
@@ -151,10 +152,11 @@ public:
 // Mutator that runs another mutator for N rounds
 class NRoundMutator : public HierarchicalMutator {
 public:
-  NRoundMutator(Mutator *child_mutator, size_t num_rounds) {
+  NRoundMutator(Mutator *child_mutator, size_t num_rounds, bool continuous_mode = false) {
     AddMutator(child_mutator);
     this->num_rounds = num_rounds;
     current_round = 0;
+    this->continuous_mode = continuous_mode;
   }
   
   virtual void InitRound(Sample *input_sample, MutatorSampleContext *context) override {
@@ -164,15 +166,45 @@ public:
 
   virtual bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
                       std::vector<Sample *> &all_samples) override {
-    if (current_round == num_rounds) return false;
+    if (current_round == num_rounds) {
+      return false;
+    }
+    
+    
+    printf("round %d\n", current_round);
+    inout_sample->PrettyPrint("inout 1");
+    colorized_sample->PrettyPrint("col 1");
+    if (continuous_mode && current_round > 0) {
+      *inout_sample = inout_sample_last;
+      *colorized_sample = colorized_sample_last;
+    }
+    
+    inout_sample->PrettyPrint("inout 2");
+    colorized_sample->PrettyPrint("col 2");
+    
     child_mutators[0]->Mutate(inout_sample, colorized_sample, prng, all_samples);
     current_round++;
+    if (continuous_mode) {
+      inout_sample_last = *inout_sample;
+      colorized_sample_last = *colorized_sample;
+    }
+    
+    inout_sample->PrettyPrint("inout 3");
+    colorized_sample->PrettyPrint("col 3");
+    
     return true;
+  }
+  
+  virtual bool IsContinuousMode() override {
+    return continuous_mode;
   }
 
 protected:
   size_t current_round;
   size_t num_rounds;
+  bool continuous_mode;
+  Sample inout_sample_last;
+  Sample colorized_sample_last;
 };
 
 class MutatorSequenceContext : public MutatorSampleContext {
@@ -628,11 +660,12 @@ public:
   bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
               std::vector<Sample *> &all_samples) override;
   
-  std::vector<I2SRecord*> RunSampleWithI2SInstrumentation(Sample *inout_sample);
+  std::pair<RunResult, std::vector<I2SRecord*>> RunSampleWithI2SInstrumentation(Sample *inout_sample);
 
   uint64_t GetI2SCode(I2SRecord *record);
   
-  std::vector<I2SRecord*> GetCandidateRecords(Sample *inout_sample,
+  std::vector<I2SMutation> GetMutations(Sample *inout_sample,
+                                        Sample *colorized_sample,
                                               std::vector<I2SRecord*> i2s_records,
                                               std::vector<I2SRecord*> colorized_i2s_records);
   
@@ -640,8 +673,106 @@ public:
                                            std::vector<uint8_t> pattern);
   
   bool Match(uint8_t *sample, uint8_t *pattern, int size);
+  bool BranchPath();
   
 protected:
+  void UpdateI2SBranchInfo(std::vector<I2SRecord*> i2s_records);
+  
+  
+  struct I2SRecordInfo {
+    std::bitset<2> hit_branches;
+    uint64_t fix_tries;
+    
+    I2SRecordInfo() {
+      hit_branches = 0x0;
+      fix_tries = 0;
+    }
+  };
+  
   Fuzzer::ThreadContext *tc;
   std::vector<Encoder*> encoders;
+  std::unordered_map<size_t, I2SRecordInfo*> i2s_records_info;
 };
+
+class I2SSelectMutator : public PSelectMutator {
+public:
+  I2SSelectMutator(Mutator *i2s_mutator, double p) : PSelectMutator() {
+    PSelectMutator::AddMutator(i2s_mutator, p);
+    lastI2S_inout_sample = Sample();
+    lastI2S_colorized_sample = Sample();
+    i2s_runs = 0;
+  }
+
+  virtual bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                      std::vector<Sample *> &all_samples) override {
+    
+    
+    if (!last_mutator_index) {
+      inout_sample->PrettyPrint("received inout");
+      colorized_sample->PrettyPrint("received colorized");
+    }
+    
+    if (!last_mutator_index && i2s_runs) {
+      i2s_runs -= 1;
+      bool res = child_mutators[0]->Mutate(&lastI2S_inout_sample, &lastI2S_colorized_sample, prng, all_samples);
+      *inout_sample = lastI2S_inout_sample;
+      *colorized_sample = lastI2S_colorized_sample;
+      return res;
+    }
+    
+    double p = prng->RandReal() * psum;
+    double sum = 0;
+    for (int i = 0; i < child_mutators.size(); i++) {
+      sum += probabilities[i];
+      if ((p < sum) || (i == (child_mutators.size() - 1))) {
+        last_mutator_index = i;
+        if (!last_mutator_index) {
+          i2s_runs = 10;
+          lastI2S_inout_sample = *inout_sample;
+          lastI2S_colorized_sample = *colorized_sample;
+          return true;
+        }
+        
+        Mutator *current_mutator = child_mutators[i];
+        return current_mutator->Mutate(inout_sample, colorized_sample, prng, all_samples);
+      }
+    }
+    // unreachable
+    return false;
+  }
+
+  virtual void NotifyResult(RunResult result, bool has_new_coverage) override {
+    child_mutators[last_mutator_index]->NotifyResult(result, has_new_coverage);
+    if (!last_mutator_index && result != OK) {
+      i2s_runs = 0;
+    }
+  }
+
+  virtual bool GenerateSample(Sample* sample, PRNG* prng) override {
+    double psum = 0;
+    size_t last_generator = 0;
+    for (size_t i = 0; i < child_mutators.size(); i++) {
+      if (child_mutators[i]->CanGenerateSample()) {
+        psum += probabilities[i];
+        last_generator = i;
+      }
+    }
+    double p = prng->RandReal() * psum;
+    double sum = 0;
+    for (int i = 0; i < child_mutators.size(); i++) {
+      if (!child_mutators[i]->CanGenerateSample()) continue;
+      sum += probabilities[i];
+      if ((p < sum) || (i == last_generator)) {
+        last_mutator_index = i;
+        Mutator* current_mutator = child_mutators[i];
+        return current_mutator->GenerateSample(sample, prng);
+      }
+    }
+    return false;
+  }
+
+protected:
+  int i2s_runs;
+  Sample lastI2S_inout_sample, lastI2S_colorized_sample;
+};
+

@@ -60,9 +60,9 @@ Mutator * BinaryFuzzer::CreateMutator(int argc, char **argv, ThreadContext *tc) 
   pselect->AddMutator(new BlockFlipMutator(1, 64, true), 0.1);
   pselect->AddMutator(new BlockDuplicateMutator(1, 128, 1, 8), 0.1);
   pselect->AddMutator(new InterestingValueMutator(true), 0.1);
-  if (input_to_state) {
-    pselect->AddMutator(new InputToStateMutator(tc), 0.001);
-  }
+//  if (input_to_state) {
+//    pselect->AddMutator(new InputToStateMutator(tc), 0.001);
+//  }
 
   // SpliceMutator is not compatible with -keep_samples_in_memory=0
   // as it requires other samples in memory besides the one being
@@ -84,13 +84,13 @@ Mutator * BinaryFuzzer::CreateMutator(int argc, char **argv, ThreadContext *tc) 
   // potentially repeat the mutation
   // (do two or more mutations in a single cycle
   RepeatMutator *repeater = new RepeatMutator(pselect_or_range, 0.5);
+  
+  Mutator *mutator;
 
   if(!use_deterministic_mutations && !deterministic_only) {
     
     // and have nrounds of this per sample cycle
-    NRoundMutator *mutator = new NRoundMutator(repeater, nrounds);
-    return mutator;
-    
+    mutator = new NRoundMutator(repeater, nrounds);
   } else {
     
     MutatorSequence *deterministic_sequence = new MutatorSequence(false, true);
@@ -109,15 +109,21 @@ Mutator * BinaryFuzzer::CreateMutator(int argc, char **argv, ThreadContext *tc) 
 
     // do 1000 rounds of derministic mutations, will switch to nondeterministic mutations
     // once deterministic mutator is "done"
-    DtermininsticNondeterministicMutator *mutator = 
+    mutator =
       new DtermininsticNondeterministicMutator(
         deterministic_sequence, 
         deterministic_rounds,
         repeater,
         nondeterministic_rounds);
-
+  }
+  
+  if (!input_to_state) {
     return mutator;
   }
+  
+  I2SSelectMutator *i2s_select_mutator = new I2SSelectMutator(new InputToStateMutator(tc), 0.0001);
+  i2s_select_mutator->AddMutator(mutator, 0.9999);
+  return i2s_select_mutator;
 }
 
 class GrammarFuzzer : public Fuzzer {

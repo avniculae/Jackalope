@@ -299,7 +299,8 @@ size_t SampleTrie::AddSample(Sample *sample) {
 
 void Sample::PrettyPrint(const char *sample_name) {
   printf("\n-------%s------\n", sample_name);
-  for (int i = 0; i < size; ++i) {
+  printf("size %d\n", size);
+  for (int i = 0; i < 16 && i < size; ++i) {
     printf("0x%02hhx ", bytes[i]);
   }
   printf("\n---------------------\n\n");
