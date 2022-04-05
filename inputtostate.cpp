@@ -57,6 +57,9 @@ bool InputToStateMutator::Mutate(Sample *inout_sample, Sample *colorized_sample,
   
   UpdateI2SBranchInfo(i2s_records);
   
+//  I2SRecord
+  
+  
   std::vector<I2SMutation> i2s_mutations = GetMutations(inout_sample, colorized_sample, i2s_records, colorized_i2s_records);
   
   printf("----- Mutations -----\n");
