@@ -54,6 +54,9 @@ class CoverageClient;
 // save state every 5 minutes
 #define FUZZER_SAVE_INERVAL (5 * 60)
 
+// save stats every minute
+#define FUZZER_STATS_SAVE_INTERVAL (1 * 60)
+
 #define MIN_SAMPLES_TO_GENERATE 10
 
 class Fuzzer {
@@ -180,6 +183,7 @@ protected:
   
   bool MagicOutputFilter(Sample *original_sample, Sample *output_sample, const char *magic, size_t magic_size);
 
+  void SaveSample(ThreadContext *tc, Sample *sample, uint32_t init_timeout, uint32_t timeout, Sample *original_sample, Coverage *stableCoverage);
   RunResult RunSample(ThreadContext *tc, Sample *sample, int *has_new_coverage, bool trim, bool report_to_server, uint32_t init_timeout, uint32_t timeout, Sample *original_sample);
   RunResult RunSampleAndGetCoverage(ThreadContext* tc, Sample* sample, Coverage* coverage, uint32_t init_timeout, uint32_t timeout);
   RunResult TryReproduceCrash(ThreadContext* tc, Sample* sample, uint32_t init_timeout, uint32_t timeout);
@@ -255,6 +259,8 @@ protected:
   bool dry_run;
   
   bool incremental_coverage;
+  
+  bool add_all_inputs;
   
   Mutex crash_mutex;
   std::unordered_map<std::string, int> unique_crashes;
