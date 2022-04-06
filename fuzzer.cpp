@@ -189,6 +189,8 @@ void Fuzzer::Run(int argc, char **argv) {
   
   uint32_t secs_to_sleep = 1;
   
+  uint64_t last_stats_time = 0;
+  
   while (1) {
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32)
     Sleep(secs_to_sleep * 1000);
@@ -202,6 +204,21 @@ void Fuzzer::Run(int argc, char **argv) {
       num_offsets += iter->offsets.size();
     }
     coverage_mutex.Unlock();
+    
+    uint64_t cur_time = GetCurTime();
+    if ((cur_time > last_stats_time && (cur_time - last_stats_time) / 1000 > FUZZER_STATS_SAVE_INTERVAL)
+        || (state == FUZZING && dry_run)) {
+      std::string out_file = DirJoin(out_dir, std::string("fuzzer_stats"));
+      FILE *fp = fopen(out_file.c_str(), "wb");
+      if (!fp) {
+        FATAL("Error saving stats");
+      }
+      
+      fprintf(fp, "\nTotal execs: %lld\nUnique samples: %lld (%lld discarded)\nCrashes: %lld (%lld unique)\nHangs: %lld\nOffsets: %zu\nExecs/s: %lld\n", total_execs, num_samples, num_samples_discarded, num_crashes, num_unique_crashes, num_hangs, num_offsets, (total_execs - last_execs) / secs_to_sleep);
+      
+      last_stats_time = cur_time;
+      fclose(fp);
+    }
     
     printf("\nTotal execs: %lld\nUnique samples: %lld (%lld discarded)\nCrashes: %lld (%lld unique)\nHangs: %lld\nOffsets: %zu\nExecs/s: %lld\n", total_execs, num_samples, num_samples_discarded, num_crashes, num_unique_crashes, num_hangs, num_offsets, (total_execs - last_execs) / secs_to_sleep);
     last_execs = total_execs;

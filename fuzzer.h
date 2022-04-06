@@ -53,6 +53,9 @@ class CoverageClient;
 // save state every 5 minutes
 #define FUZZER_SAVE_INERVAL (5 * 60)
 
+// save stats every minute
+#define FUZZER_STATS_SAVE_INTERVAL (1 * 60)
+
 #define MIN_SAMPLES_TO_GENERATE 10
 
 class Fuzzer {
