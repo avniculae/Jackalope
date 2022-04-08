@@ -171,16 +171,16 @@ public:
     }
     
     
-    printf("round %d\n", current_round);
-    inout_sample->PrettyPrint("inout 1");
-    colorized_sample->PrettyPrint("col 1");
+//    printf("round %d\n", current_round);
+//    inout_sample->PrettyPrint("inout 1");
+//    colorized_sample->PrettyPrint("col 1");
     if (continuous_mode && current_round > 0) {
       *inout_sample = inout_sample_last;
       *colorized_sample = colorized_sample_last;
     }
     
-    inout_sample->PrettyPrint("inout 2");
-    colorized_sample->PrettyPrint("col 2");
+//    inout_sample->PrettyPrint("inout 2");
+//    colorized_sample->PrettyPrint("col 2");
     
     child_mutators[0]->Mutate(inout_sample, colorized_sample, prng, all_samples);
     current_round++;
@@ -189,8 +189,8 @@ public:
       colorized_sample_last = *colorized_sample;
     }
     
-    inout_sample->PrettyPrint("inout 3");
-    colorized_sample->PrettyPrint("col 3");
+//    inout_sample->PrettyPrint("inout 3");
+//    colorized_sample->PrettyPrint("col 3");
     
     return true;
   }
@@ -707,10 +707,10 @@ public:
                       std::vector<Sample *> &all_samples) override {
     
     
-    if (!last_mutator_index) {
-      inout_sample->PrettyPrint("received inout");
-      colorized_sample->PrettyPrint("received colorized");
-    }
+//    if (!last_mutator_index) {
+//      inout_sample->PrettyPrint("received inout");
+//      colorized_sample->PrettyPrint("received colorized");
+//    }
     
     if (!last_mutator_index && i2s_runs) {
       i2s_runs -= 1;

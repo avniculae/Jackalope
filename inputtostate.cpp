@@ -15,7 +15,11 @@ InputToStateMutator::InputToStateMutator(Fuzzer::ThreadContext *tc) {
     new ZextEncoder(8),
     new ZextEncoder(4),
     new ZextEncoder(2),
-    new ZextEncoder(1)
+    new ZextEncoder(1),
+    new SextEncoder(8),
+    new SextEncoder(4),
+    new SextEncoder(2),
+    new SextEncoder(1)
   };
 }
 
@@ -38,9 +42,9 @@ void InputToStateMutator::UpdateI2SBranchInfo(std::vector<I2SRecord*> i2s_record
 bool InputToStateMutator::Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
                                  std::vector<Sample *> &all_samples) {
 
-  printf("======================== I2S Mutate BEGIN ========================\n");
-  inout_sample->PrettyPrint("inout");
-  colorized_sample->PrettyPrint("col");
+//  printf("======================== I2S Mutate BEGIN ========================\n");
+//  inout_sample->PrettyPrint("inout");
+//  colorized_sample->PrettyPrint("col");
 
   std::pair<RunResult, std::vector<I2SRecord*>> i2s_run_pair = RunSampleWithI2SInstrumentation(inout_sample);
   if (i2s_run_pair.first != OK) {
@@ -62,11 +66,11 @@ bool InputToStateMutator::Mutate(Sample *inout_sample, Sample *colorized_sample,
   
   std::vector<I2SMutation> i2s_mutations = GetMutations(inout_sample, colorized_sample, i2s_records, colorized_i2s_records);
   
-  printf("----- Mutations -----\n");
-  for (auto &mutation : i2s_mutations) {
-    mutation.PrettyPrint();
-  }
-  printf("\n\n");
+//  printf("----- Mutations -----\n");
+//  for (auto &mutation : i2s_mutations) {
+//    mutation.PrettyPrint();
+//  }
+//  printf("\n\n");
   
   for (auto &mutation : i2s_mutations) {
     inout_sample->Replace(mutation.from, mutation.from + mutation.bytes.size(), (char *)mutation.bytes.data());
@@ -81,7 +85,7 @@ bool InputToStateMutator::Mutate(Sample *inout_sample, Sample *colorized_sample,
     delete record;
   }
   
-  printf("======================== I2S Mutate END ========================\n");
+//  printf("======================== I2S Mutate END ========================\n");
   
   return true;
 }
@@ -115,7 +119,7 @@ std::vector<I2SMutation> InputToStateMutator::GetMutations(Sample *inout_sample,
     code_to_record[GetI2SCode(record)] = record;
   }
   
-  colorized_sample->PrettyPrint("col");
+//  colorized_sample->PrettyPrint("col");
   
   std::vector<I2SMutation> i2s_mutations;
   
@@ -131,8 +135,8 @@ std::vector<I2SMutation> InputToStateMutator::GetMutations(Sample *inout_sample,
       continue;
     }
     
-    record->PrettyPrint();
-    colorized_record->PrettyPrint();
+//    record->PrettyPrint();
+//    colorized_record->PrettyPrint();
     
     for (int i = 0; i < 2; i++, colorized_record->op_val[0].swap(colorized_record->op_val[1]),
         record->op_val[0].swap(record->op_val[1])) {
@@ -142,6 +146,10 @@ std::vector<I2SMutation> InputToStateMutator::GetMutations(Sample *inout_sample,
       }
       
       for (auto &encoder : encoders) {
+//        if (!encoder->IsApplicable(record) || !encoder->IsApplicable(colorized_record)) {
+//          continue;
+//        }
+        
         if (encoder->Encode(record->op_val[0]) == encoder->Encode(record->op_val[1], record)) {
           continue;
         }
@@ -184,7 +192,7 @@ bool InputToStateMutator::Match(uint8_t *sample, uint8_t *pattern, int size) {
   return true;
 }
 
-//TO DO: Implement KMP
+// TO DO: Implement KMP
 std::vector<size_t> InputToStateMutator::GetMatchingPositions(Sample *inout_sample, std::vector<uint8_t> pattern) {
   std::vector<size_t> matching_positions;
   for (size_t i = 0; i + pattern.size() <= inout_sample->size; ++i) {
@@ -196,13 +204,50 @@ std::vector<size_t> InputToStateMutator::GetMatchingPositions(Sample *inout_samp
   return matching_positions;
 }
 
+bool ZextEncoder::IsApplicable(std::vector<uint8_t> bytes) {
+  if (bytes.size() < n_bytes) {
+    return false;
+  }
+  
+  for (int i = n_bytes; i < bytes.size(); ++i) {
+    if (bytes[i] != 0x00) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
 std::vector<uint8_t> ZextEncoder::Encode(std::vector<uint8_t> bytes) {
   while (bytes.size() > n_bytes) {
     bytes.pop_back();
   }
   
-  while (bytes.size() < n_bytes) {
-    bytes.push_back(0x0);
+  return bytes;
+}
+
+bool SextEncoder::IsApplicable(std::vector<uint8_t> bytes) {
+  if (bytes.size() < n_bytes) {
+    return false;
+  }
+  
+  uint8_t sign = (bytes[n_bytes-1] & 0x80) >> 7;
+  for (int i = n_bytes; i < bytes.size(); ++i) {
+    if (!sign && bytes[i] != 0x00) {
+      return false;
+    }
+    
+    if (sign && bytes[i] != 0xff) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+std::vector<uint8_t> SextEncoder::Encode(std::vector<uint8_t> bytes) {
+  while (bytes.size() > n_bytes) {
+    bytes.pop_back();
   }
   
   return bytes;
@@ -241,7 +286,9 @@ std::vector<uint8_t> Encoder::AdjustBytes(std::vector<uint8_t> bytes, I2SRecord 
 //  if (adjust != 0) {
 //    printf("ADJUST %d\n", adjust);
 //  }
-  bytes[0] += adjust;
+  
+  // TO DO: correct here
+  bytes[0] += (1 - 2 * prng->Rand(0, 1)) * adjust;
   return bytes;
 }
 
