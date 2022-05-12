@@ -370,6 +370,19 @@ void Fuzzer::SaveSample(ThreadContext *tc, Sample *sample, uint32_t init_timeout
   char fileindex[20];
   sprintf(fileindex, "%05lld", num_samples);
   string filename = string("sample_") + fileindex;
+  
+//  int sum_offsets = 0;
+//  for (auto &modulecov: *stableCoverage) {
+//    sum_offsets += modulecov.offsets.size();
+//  }
+//  char stroff[20];
+//  sprintf(stroff, "%05lld", sum_offsets);
+//  filename += string("_") + stroff;
+  
+  if (tc->mutator->i2s_mutated) {
+    filename += string("_i2s");
+  }
+  
   string outfile = DirJoin(sample_dir, filename);
   sample->Save(outfile.c_str());
   num_samples++;

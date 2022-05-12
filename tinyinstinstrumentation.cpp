@@ -139,10 +139,10 @@ RunResult TinyInstInstrumentation::RunWithCrashAnalysis(int argc, char** argv, u
 }
 
 RunResult TinyInstInstrumentation::RunWithI2SInstrumentation(int argc, char** argv, uint32_t init_timeout, uint32_t timeout) {
-  instrumentation->Kill();
+//  instrumentation->Kill();
   instrumentation->EnableInputToState();
   RunResult ret = Run(argc, argv, init_timeout, timeout);
-  instrumentation->Kill();
+//  instrumentation->Kill();
   instrumentation->DisableInputToState();
   return ret;
 }
@@ -179,8 +179,8 @@ void TinyInstInstrumentation::DisableFullCoverage() {
   instrumentation->DisableFullCoverage();
 }
 
-std::vector<I2SRecord*> TinyInstInstrumentation::GetI2SRecords(bool clear_i2s) {
-  return instrumentation->GetI2SRecords(clear_i2s);
+std::vector<I2SData> TinyInstInstrumentation::GetI2SData(bool clear_i2s) {
+  return instrumentation->GetI2SData(clear_i2s);
 }
 
 TinyInstInstrumentation::~TinyInstInstrumentation() {

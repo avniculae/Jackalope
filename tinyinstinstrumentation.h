@@ -46,7 +46,7 @@ public:
   void DisableFullCoverage() override;
   
   void ClearI2SData() override;
-  std::vector<I2SRecord*> GetI2SRecords(bool clear_i2s) override;
+  std::vector<I2SData> GetI2SData(bool clear_i2s) override;
 
   uint64_t GetReturnValue() override;
 

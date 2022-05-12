@@ -61,6 +61,8 @@ public:
   virtual void AddMutator(Mutator *mutator) { child_mutators.push_back(mutator); }
   virtual void SetRanges(std::vector<Range>* ranges) { }
   virtual bool IsContinuousMode() { return false; }
+  
+  bool i2s_mutated = false;
 
 protected:
   // a helper function to get a random chunk of sample (with size samplesize)
@@ -352,6 +354,7 @@ public:
       if ((p < sum) || (i == (child_mutators.size() - 1))) {
         last_mutator_index = i;
         Mutator *current_mutator = child_mutators[i];
+//        i2s_mutated = (i == child_mutators.size() - 1);
         return current_mutator->Mutate(inout_sample, colorized_sample, prng, all_samples);
       }
     }
@@ -705,14 +708,14 @@ public:
   bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
               std::vector<Sample *> &all_samples) override;
   
-  std::pair<RunResult, std::vector<I2SRecord*>> RunSampleWithI2SInstrumentation(Sample *inout_sample);
+  std::pair<RunResult, std::vector<I2SData>> RunSampleWithI2SInstrumentation(Sample *inout_sample);
 
   uint64_t GetI2SCode(I2SRecord *record);
   
   std::vector<I2SMutation> GetMutations(Sample *inout_sample,
                                         Sample *colorized_sample,
-                                              std::vector<I2SRecord*> i2s_records,
-                                              std::vector<I2SRecord*> colorized_i2s_records);
+                                              std::vector<I2SData> i2s_records,
+                                              std::vector<I2SData> colorized_i2s_records);
   
   std::vector<size_t> GetMatchingPositions(Sample *inout_sample,
                                            std::vector<uint8_t> pattern);
@@ -721,22 +724,22 @@ public:
   bool BranchPath();
   
 protected:
-  void UpdateI2SBranchInfo(std::vector<I2SRecord*> i2s_records);
+//  void UpdateI2SBranchInfo(std::vector<I2SData> i2s_data_vector);
   
   
-  struct I2SRecordInfo {
-    std::bitset<2> hit_branches;
-    uint64_t fix_tries;
-    
-    I2SRecordInfo() {
-      hit_branches = 0x0;
-      fix_tries = 0;
-    }
-  };
+//  struct I2SRecordInfo {
+//    std::bitset<2> hit_branches;
+//    uint64_t fix_tries;
+//
+//    I2SRecordInfo() {
+//      hit_branches = 0x0;
+//      fix_tries = 0;
+//    }
+//  };
   
   Fuzzer::ThreadContext *tc;
   std::vector<Encoder*> encoders;
-  std::unordered_map<size_t, I2SRecordInfo*> i2s_records_info;
+//  std::unordered_map<size_t, I2SRecordInfo*> i2s_records_info;
 };
 
 class I2SSelectMutator : public PSelectMutator {
@@ -758,8 +761,10 @@ public:
 //    }
     
     if (!last_mutator_index && i2s_runs) {
-      i2s_runs -= 1;
       bool res = child_mutators[0]->Mutate(&lastI2S_inout_sample, &lastI2S_colorized_sample, prng, all_samples);
+      i2s_mutated = true;
+      i2s_runs -= 1;
+      
       *inout_sample = lastI2S_inout_sample;
       *colorized_sample = lastI2S_colorized_sample;
       return res;
@@ -778,6 +783,7 @@ public:
           return true;
         }
         
+        i2s_mutated = false;
         Mutator *current_mutator = child_mutators[i];
         return current_mutator->Mutate(inout_sample, colorized_sample, prng, all_samples);
       }

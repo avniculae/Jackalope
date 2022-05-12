@@ -122,8 +122,8 @@ Mutator * BinaryFuzzer::CreateMutator(int argc, char **argv, ThreadContext *tc) 
     return mutator;
   }
   
-  I2SSelectMutator *i2s_select_mutator = new I2SSelectMutator(new InputToStateMutator(tc), 0.0001);
-  i2s_select_mutator->AddMutator(mutator, 0.9999);
+  I2SSelectMutator *i2s_select_mutator = new I2SSelectMutator(new InputToStateMutator(tc), 0.001);
+  i2s_select_mutator->AddMutator(mutator, 0.999);
   return i2s_select_mutator;
 }
 

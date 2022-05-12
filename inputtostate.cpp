@@ -28,16 +28,16 @@ uint64_t InputToStateMutator::GetI2SCode(I2SRecord *records) {
   return code;
 }
 
-void InputToStateMutator::UpdateI2SBranchInfo(std::vector<I2SRecord*> i2s_records) {
-  for (auto &i2s_record : i2s_records) {
-    size_t i2s_address = i2s_record->bb_address + i2s_record->bb_offset;
-    if (i2s_records_info.count(i2s_address) == 0) {
-      i2s_records_info[i2s_address] = (I2SRecordInfo*)malloc(sizeof(I2SRecordInfo));
-    }
-    
-    i2s_records_info[i2s_address]->hit_branches |= (1 << i2s_record->BranchPath());
-  }
-}
+//void InputToStateMutator::UpdateI2SBranchInfo(std::vector<I2SData> i2s_data_vector) {
+//  for (auto &i2s_data : i2s_data_vector) {
+//    size_t i2s_address = i2s_data.bb_address + i2s_data.bb_offset;
+//    if (i2s_records_info.count(i2s_address) == 0) {
+//      i2s_records_info[i2s_address] = (I2SRecordInfo*)malloc(sizeof(I2SRecordInfo));
+//    }
+//
+//    i2s_records_info[i2s_address]->hit_branches |= (1 << i2s_data.BranchPath());
+//  }
+//}
 
 bool InputToStateMutator::Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
                                  std::vector<Sample *> &all_samples) {
@@ -46,25 +46,25 @@ bool InputToStateMutator::Mutate(Sample *inout_sample, Sample *colorized_sample,
 //  inout_sample->PrettyPrint("inout");
 //  colorized_sample->PrettyPrint("col");
 
-  std::pair<RunResult, std::vector<I2SRecord*>> i2s_run_pair = RunSampleWithI2SInstrumentation(inout_sample);
+  std::pair<RunResult, std::vector<I2SData>> i2s_run_pair = RunSampleWithI2SInstrumentation(inout_sample);
   if (i2s_run_pair.first != OK) {
     return false;
   }
-  std::vector<I2SRecord*> i2s_records = i2s_run_pair.second;
+  std::vector<I2SData> i2s_data_vector = i2s_run_pair.second;
 
   i2s_run_pair = RunSampleWithI2SInstrumentation(colorized_sample);
   if (i2s_run_pair.first != OK) {
     *inout_sample = *colorized_sample;
     return false;
   }
-  std::vector<I2SRecord*> colorized_i2s_records = i2s_run_pair.second;
+  std::vector<I2SData> colorized_i2s_data_vector = i2s_run_pair.second;
   
-  UpdateI2SBranchInfo(i2s_records);
+//  UpdateI2SBranchInfo(i2s_records);
   
 //  I2SRecord
   
   
-  std::vector<I2SMutation> i2s_mutations = GetMutations(inout_sample, colorized_sample, i2s_records, colorized_i2s_records);
+  std::vector<I2SMutation> i2s_mutations = GetMutations(inout_sample, colorized_sample, i2s_data_vector, colorized_i2s_data_vector);
   
 //  printf("----- Mutations -----\n");
 //  for (auto &mutation : i2s_mutations) {
@@ -76,21 +76,13 @@ bool InputToStateMutator::Mutate(Sample *inout_sample, Sample *colorized_sample,
     inout_sample->Replace(mutation.from, mutation.from + mutation.bytes.size(), (char *)mutation.bytes.data());
     colorized_sample->Replace(mutation.from, mutation.from + mutation.bytes_col.size(), (char *)mutation.bytes_col.data());
   }
-  
-  for (auto &record : i2s_records) {
-    delete record;
-  }
-  
-  for (auto &record : colorized_i2s_records) {
-    delete record;
-  }
-  
+
 //  printf("======================== I2S Mutate END ========================\n");
   
   return true;
 }
 
-std::pair<RunResult, std::vector<I2SRecord*>> InputToStateMutator::RunSampleWithI2SInstrumentation(Sample *inout_sample) {
+std::pair<RunResult, std::vector<I2SData>> InputToStateMutator::RunSampleWithI2SInstrumentation(Sample *inout_sample) {
   if (!tc->sampleDelivery->DeliverSample(inout_sample)) {
     WARN("Error delivering sample, retrying with a clean target");
     tc->instrumentation->CleanTarget();
@@ -101,47 +93,47 @@ std::pair<RunResult, std::vector<I2SRecord*>> InputToStateMutator::RunSampleWith
   
   RunResult result = tc->instrumentation->RunWithI2SInstrumentation(tc->target_argc, tc->target_argv, tc->fuzzer->init_timeout, tc->fuzzer->timeout);
   if (result != OK) {
-    return {result, std::vector<I2SRecord*>()};
+    return {result, std::vector<I2SData>()};
   }
   
-  std::vector<I2SRecord*> i2s_records = tc->instrumentation->GetI2SRecords(true);
+  std::vector<I2SData> i2s_data_vector = tc->instrumentation->GetI2SData(true);
   
-  return {result, i2s_records};
+  return {result, i2s_data_vector};
 }
 
 std::vector<I2SMutation> InputToStateMutator::GetMutations(Sample *inout_sample,
                                                            Sample *colorized_sample,
-                                                                 std::vector<I2SRecord*> i2s_records,
-                                                                 std::vector<I2SRecord*> colorized_i2s_records) {
-  std::unordered_map<uint64_t, I2SRecord*> code_to_record;
+                                                                 std::vector<I2SData> i2s_data_vector,
+                                                                 std::vector<I2SData> colorized_i2s_data_vector) {
+  std::unordered_map<uint64_t, I2SData> code_to_i2s_data;
   
-  for (auto &record: i2s_records) {
-    code_to_record[GetI2SCode(record)] = record;
+  for (auto &i2s_data: i2s_data_vector) {
+    code_to_i2s_data[GetI2SCode(i2s_data.i2s_record)] = i2s_data;
   }
   
 //  colorized_sample->PrettyPrint("col");
   
   std::vector<I2SMutation> i2s_mutations;
   
-  std::reverse(colorized_i2s_records.begin(), colorized_i2s_records.end());
-  for (auto &colorized_record: colorized_i2s_records) {
-    I2SRecord *record = (code_to_record.count(GetI2SCode(colorized_record)) > 0) ? code_to_record[GetI2SCode(colorized_record)] : NULL;
-    if (record == NULL) {
+  std::reverse(colorized_i2s_data_vector.begin(), colorized_i2s_data_vector.end());
+  for (auto &colorized_i2s_data: colorized_i2s_data_vector) {
+    if (code_to_i2s_data.count(GetI2SCode(colorized_i2s_data.i2s_record)) == 0) {
       continue;
     }
+    I2SData i2s_data = code_to_i2s_data[GetI2SCode(colorized_i2s_data.i2s_record)];
     
-    if (record->op_val[0] == colorized_record->op_val[0]
-        && record->op_val[1] == colorized_record->op_val[1]) {
+    if (i2s_data.op_val[0] == colorized_i2s_data.op_val[0]
+        && i2s_data.op_val[1] == colorized_i2s_data.op_val[1]) {
       continue;
     }
     
 //    record->PrettyPrint();
 //    colorized_record->PrettyPrint();
     
-    for (int i = 0; i < 2; i++, colorized_record->op_val[0].swap(colorized_record->op_val[1]),
-        record->op_val[0].swap(record->op_val[1])) {
+    for (int i = 0; i < 2; i++, colorized_i2s_data.op_val[0].swap(colorized_i2s_data.op_val[1]),
+        i2s_data.op_val[0].swap(i2s_data.op_val[1])) {
       
-      if (record->op_val[0] == colorized_record->op_val[0]) {
+      if (i2s_data.op_val[0] == colorized_i2s_data.op_val[0]) {
         continue;
       }
       
@@ -150,13 +142,13 @@ std::vector<I2SMutation> InputToStateMutator::GetMutations(Sample *inout_sample,
 //          continue;
 //        }
         
-        if (encoder->Encode(record->op_val[0]) == encoder->Encode(record->op_val[1], record)) {
+        if (encoder->Encode(i2s_data.op_val[0]) == encoder->Encode(i2s_data.op_val[1], i2s_data)) {
           continue;
         }
         
-        std::vector<size_t> matching_positions = GetMatchingPositions(inout_sample, encoder->Encode(record->op_val[0]));
+        std::vector<size_t> matching_positions = GetMatchingPositions(inout_sample, encoder->Encode(i2s_data.op_val[0]));
         
-        std::vector<size_t> matching_positions_col = GetMatchingPositions(colorized_sample, encoder->Encode(colorized_record->op_val[0]));
+        std::vector<size_t> matching_positions_col = GetMatchingPositions(colorized_sample, encoder->Encode(colorized_i2s_data.op_val[0]));
         
         std::vector<size_t> common_positions;
         std::set_intersection(matching_positions.begin(),matching_positions.end(),
@@ -168,8 +160,8 @@ std::vector<I2SMutation> InputToStateMutator::GetMutations(Sample *inout_sample,
         for (auto &pos : common_positions) {
           i2s_mutations.push_back(
                 I2SMutation(pos,
-                            encoder->Encode(record->op_val[1], record),
-                            encoder->Encode(colorized_record->op_val[1], colorized_record)));
+                            encoder->Encode(i2s_data.op_val[1], i2s_data),
+                            encoder->Encode(colorized_i2s_data.op_val[1], colorized_i2s_data)));
         }
       }
     }
@@ -253,13 +245,13 @@ std::vector<uint8_t> SextEncoder::Encode(std::vector<uint8_t> bytes) {
   return bytes;
 }
 
-std::vector<uint8_t> Encoder::AdjustBytes(std::vector<uint8_t> bytes, I2SRecord *i2s_record) {
+std::vector<uint8_t> Encoder::AdjustBytes(std::vector<uint8_t> bytes, I2SData i2s_data) {
   if (bytes.size() == 0) {
     return bytes;
   }
   
   int adjust;
-  switch (i2s_record->type) {
+  switch (i2s_data.i2s_record->type) {
     case CMPB:
     case CMPL:
 //      printf("CMPB CMPL\n");

@@ -49,7 +49,7 @@ public:
   virtual void DisableFullCoverage() = 0;
   
   virtual void ClearI2SData() = 0;
-  virtual std::vector<I2SRecord*> GetI2SRecords(bool clear_i2s) = 0;
+  virtual std::vector<I2SData> GetI2SData(bool clear_i2s) = 0;
 
   virtual std::string GetCrashName() { return "crash"; };
 

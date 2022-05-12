@@ -16,14 +16,14 @@ public:
   virtual std::vector<uint8_t> Encode(std::vector<uint8_t> bytes) = 0;
   virtual bool IsApplicable(std::vector<uint8_t> bytes) = 0;
   
-  bool IsApplicable(I2SRecord *i2s_record) {
-    return IsApplicable(i2s_record->op_val[0]) && IsApplicable(i2s_record->op_val[1]);
+  bool IsApplicable(I2SData i2s_data) {
+    return IsApplicable(i2s_data.op_val[0]) && IsApplicable(i2s_data.op_val[1]);
   }
   
-  std::vector<uint8_t> AdjustBytes(std::vector<uint8_t> bytes, I2SRecord *i2s_record);
+  std::vector<uint8_t> AdjustBytes(std::vector<uint8_t> bytes, I2SData i2s_data);
   
-  std::vector<uint8_t> Encode(std::vector<uint8_t> bytes, I2SRecord *i2s_record) {
-    bytes = AdjustBytes(Encode(bytes), i2s_record);
+  std::vector<uint8_t> Encode(std::vector<uint8_t> bytes, I2SData i2s_data) {
+    bytes = AdjustBytes(Encode(bytes), i2s_data);
     return bytes;
   }
   
