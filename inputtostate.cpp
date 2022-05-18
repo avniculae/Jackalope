@@ -12,14 +12,14 @@
 InputToStateMutator::InputToStateMutator(Fuzzer::ThreadContext *tc) {
   this->tc = tc;
   encoders = {
-    new ZextEncoder(8),
-    new ZextEncoder(4),
-    new ZextEncoder(2),
-    new ZextEncoder(1),
-    new SextEncoder(8),
-    new SextEncoder(4),
-    new SextEncoder(2),
-    new SextEncoder(1)
+    new ZextEncoder(8, false), new ZextEncoder(8, true),
+    new ZextEncoder(4, false), new ZextEncoder(4, true),
+    new ZextEncoder(2, false), new ZextEncoder(2, true),
+    new ZextEncoder(1, false), new ZextEncoder(1, true),
+    new SextEncoder(8, false), new SextEncoder(8, true),
+    new SextEncoder(4, false), new SextEncoder(4, true),
+    new SextEncoder(2, false), new SextEncoder(2, true),
+    new SextEncoder(1, false), new SextEncoder(1, true),
   };
 }
 
@@ -66,11 +66,11 @@ bool InputToStateMutator::Mutate(Sample *inout_sample, Sample *colorized_sample,
   
   std::vector<I2SMutation> i2s_mutations = GetMutations(inout_sample, colorized_sample, i2s_data_vector, colorized_i2s_data_vector);
   
-//  printf("----- Mutations -----\n");
-//  for (auto &mutation : i2s_mutations) {
-//    mutation.PrettyPrint();
-//  }
-//  printf("\n\n");
+  printf("----- Mutations -----\n");
+  for (auto &mutation : i2s_mutations) {
+    mutation.PrettyPrint();
+  }
+  printf("\n\n");
   
   for (auto &mutation : i2s_mutations) {
     inout_sample->Replace(mutation.from, mutation.from + mutation.bytes.size(), (char *)mutation.bytes.data());
@@ -105,6 +105,7 @@ std::vector<I2SMutation> InputToStateMutator::GetMutations(Sample *inout_sample,
                                                            Sample *colorized_sample,
                                                                  std::vector<I2SData> i2s_data_vector,
                                                                  std::vector<I2SData> colorized_i2s_data_vector) {
+//  printf("getmutations sizes %d %d\n", i2s_data_vector.size(), colorized_i2s_data_vector.size());
   std::unordered_map<uint64_t, I2SData> code_to_i2s_data;
   
   for (auto &i2s_data: i2s_data_vector) {
@@ -127,8 +128,8 @@ std::vector<I2SMutation> InputToStateMutator::GetMutations(Sample *inout_sample,
       continue;
     }
     
-//    record->PrettyPrint();
-//    colorized_record->PrettyPrint();
+//    i2s_data.PrettyPrint();
+//    colorized_i2s_data.PrettyPrint();
     
     for (int i = 0; i < 2; i++, colorized_i2s_data.op_val[0].swap(colorized_i2s_data.op_val[1]),
         i2s_data.op_val[0].swap(i2s_data.op_val[1])) {
@@ -215,6 +216,7 @@ std::vector<uint8_t> ZextEncoder::Encode(std::vector<uint8_t> bytes) {
     bytes.pop_back();
   }
   
+  bytes = Encoder::Encode(bytes);
   return bytes;
 }
 
@@ -242,6 +244,7 @@ std::vector<uint8_t> SextEncoder::Encode(std::vector<uint8_t> bytes) {
     bytes.pop_back();
   }
   
+  bytes = Encoder::Encode(bytes);
   return bytes;
 }
 

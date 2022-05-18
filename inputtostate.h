@@ -12,8 +12,13 @@
 
 class Encoder {
 public:
-  Encoder() : prng(new MTPRNG()) { }
-  virtual std::vector<uint8_t> Encode(std::vector<uint8_t> bytes) = 0;
+  Encoder(bool reverse) : prng(new MTPRNG()) { this->reverse = reverse; }
+  virtual std::vector<uint8_t> Encode(std::vector<uint8_t> bytes) {
+    if (reverse) {
+      std::reverse(bytes.begin(), bytes.end());
+    }
+    return bytes;
+  }
   virtual bool IsApplicable(std::vector<uint8_t> bytes) = 0;
   
   bool IsApplicable(I2SData i2s_data) {
@@ -24,15 +29,21 @@ public:
   
   std::vector<uint8_t> Encode(std::vector<uint8_t> bytes, I2SData i2s_data) {
     bytes = AdjustBytes(Encode(bytes), i2s_data);
+    
+//    for (auto &byte : bytes) {
+//      printf("0x%02hhx ", byte);
+//    }
+//    printf("\n");
     return bytes;
   }
   
   PRNG *prng;
+  bool reverse;
 };
 
 class ZextEncoder : public Encoder {
 public:
-  ZextEncoder(int n_bytes) {
+  ZextEncoder(int n_bytes, bool reverse) : Encoder(reverse) {
     this->n_bytes = n_bytes;
   }
   
@@ -45,7 +56,7 @@ public:
 
 class SextEncoder : public Encoder {
 public:
-  SextEncoder(int n_bytes) {
+  SextEncoder(int n_bytes, bool reverse) : Encoder(reverse) {
     this->n_bytes = n_bytes;
   }
   
@@ -69,7 +80,7 @@ public:
   std::vector<uint8_t> bytes_col;
   
   void PrettyPrint() {
-    if (from < 16) {
+    if (from < 100) {
       printf("pos: %d ", from);
       printf("data: ");
       for (auto &byte : bytes) {
