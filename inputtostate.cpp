@@ -66,11 +66,11 @@ bool InputToStateMutator::Mutate(Sample *inout_sample, Sample *colorized_sample,
   
   std::vector<I2SMutation> i2s_mutations = GetMutations(inout_sample, colorized_sample, i2s_data_vector, colorized_i2s_data_vector);
   
-  printf("----- Mutations -----\n");
-  for (auto &mutation : i2s_mutations) {
-    mutation.PrettyPrint();
-  }
-  printf("\n\n");
+//  printf("----- Mutations -----\n");
+//  for (auto &mutation : i2s_mutations) {
+//    mutation.PrettyPrint();
+//  }
+//  printf("\n\n");
   
   for (auto &mutation : i2s_mutations) {
     inout_sample->Replace(mutation.from, mutation.from + mutation.bytes.size(), (char *)mutation.bytes.data());
