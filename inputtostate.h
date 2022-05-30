@@ -69,19 +69,22 @@ public:
 
 class I2SMutation {
 public:
-  I2SMutation(size_t from, std::vector<uint8_t> bytes, std::vector<uint8_t> bytes_col) {
+  I2SMutation(size_t from, std::vector<uint8_t> bytes, std::vector<uint8_t> bytes_col, I2SRecord *i2s_record) {
     this->from = from;
     this->bytes = bytes;
     this->bytes_col = bytes_col;
+    this->i2s_record = i2s_record;
   }
   
   size_t from;
   std::vector<uint8_t> bytes;
   std::vector<uint8_t> bytes_col;
+  I2SRecord *i2s_record; //debugging purposes
   
   void PrettyPrint() {
     if (from < 100) {
-      printf("pos: %d ", from);
+      //0x100005e75
+      printf("CMP ADDR: 0x%zx, pos: %d", i2s_record->bb_address+i2s_record->cmp_offset, from);
       printf("data: ");
       for (auto &byte : bytes) {
         printf("0x%02hhx ", byte);

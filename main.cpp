@@ -44,6 +44,8 @@ Mutator * BinaryFuzzer::CreateMutator(int argc, char **argv, ThreadContext *tc) 
   int nrounds = GetIntOption("-iterations_per_round", argc, argv, 1000);
   
   bool input_to_state = GetBinaryOption("-input_to_state", argc, argv, false);
+  size_t opt_address = GetSizeTOption("-opt_address", argc, argv, 0);
+  bool input_to_state_always = GetBinaryOption("-input_to_state_always", argc, argv, false);
 
   // a pretty simple mutation strategy
 
@@ -122,7 +124,7 @@ Mutator * BinaryFuzzer::CreateMutator(int argc, char **argv, ThreadContext *tc) 
     return mutator;
   }
   
-  I2SSelectMutator *i2s_select_mutator = new I2SSelectMutator(new InputToStateMutator(tc), 0.001);
+  I2SSelectMutator *i2s_select_mutator = new I2SSelectMutator(new InputToStateMutator(tc), 0.001, opt_address, input_to_state_always);
   i2s_select_mutator->AddMutator(mutator, 0.999);
   return i2s_select_mutator;
 }

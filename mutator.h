@@ -723,6 +723,8 @@ public:
   bool Match(uint8_t *sample, uint8_t *pattern, int size);
   bool BranchPath();
   
+  void Fix(Sample *inout_sample, size_t opt_address);
+  
 protected:
 //  void UpdateI2SBranchInfo(std::vector<I2SData> i2s_data_vector);
   
@@ -744,11 +746,13 @@ protected:
 
 class I2SSelectMutator : public PSelectMutator {
 public:
-  I2SSelectMutator(Mutator *i2s_mutator, double p) : PSelectMutator() {
+  I2SSelectMutator(Mutator *i2s_mutator, double p, size_t opt_address, bool input_to_state_always) : PSelectMutator() {
     PSelectMutator::AddMutator(i2s_mutator, p);
     lastI2S_inout_sample = Sample();
     lastI2S_colorized_sample = Sample();
     i2s_runs = 0;
+    this->opt_address = opt_address;
+    this->input_to_state_always = input_to_state_always;
   }
 
   virtual bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
@@ -785,7 +789,36 @@ public:
         
         i2s_mutated = false;
         Mutator *current_mutator = child_mutators[i];
-        return current_mutator->Mutate(inout_sample, colorized_sample, prng, all_samples);
+        
+        Sample inout_sample_copy;
+        if (input_to_state_always) {
+          inout_sample_copy = *inout_sample;
+        }
+        
+        bool res = current_mutator->Mutate(inout_sample, colorized_sample, prng, all_samples);
+        
+        if (input_to_state_always) {
+          if (inout_sample->size < colorized_sample->size) {
+            colorized_sample->Trim(inout_sample->size);
+          }
+          if (inout_sample->size > colorized_sample->size) {
+            colorized_sample->Append(inout_sample->bytes + colorized_sample->size, inout_sample->size - colorized_sample->size);
+          }
+
+          for (int i = 0; i < inout_sample->size; ++i) {
+            if (inout_sample_copy.bytes[i] != inout_sample->bytes[i]) {
+              colorized_sample->bytes[i] = inout_sample->bytes[i];
+            }
+          }
+
+          child_mutators[0]->Mutate(inout_sample, colorized_sample, prng, all_samples);
+        }
+//
+        if (opt_address) {
+          ((InputToStateMutator*)child_mutators[0])->Fix(inout_sample, opt_address);
+        }
+        
+        return res;
       }
     }
     // unreachable
@@ -825,5 +858,7 @@ public:
 protected:
   int i2s_runs;
   Sample lastI2S_inout_sample, lastI2S_colorized_sample;
+  bool opt_address;
+  bool input_to_state_always;
 };
 

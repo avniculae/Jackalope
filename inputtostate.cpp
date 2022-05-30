@@ -39,6 +39,68 @@ uint64_t InputToStateMutator::GetI2SCode(I2SRecord *records) {
 //  }
 //}
 
+void InputToStateMutator::Fix(Sample *inout_sample, size_t opt_address) {
+  std::pair<RunResult, std::vector<I2SData>> i2s_run_pair = RunSampleWithI2SInstrumentation(inout_sample);
+  if (i2s_run_pair.first != OK) {
+    return;
+  }
+  std::vector<I2SData> i2s_data_vector = i2s_run_pair.second;
+  
+  std::vector<I2SMutation> i2s_mutations;
+  for (auto &i2s_data: i2s_data_vector) {
+    if (i2s_data.i2s_record->bb_address + i2s_data.i2s_record->cmp_offset != 0x100005e75) {
+      continue;
+    }
+    
+    
+//    i2s_data.PrettyPrint();
+//    colorized_i2s_data.PrettyPrint();
+    
+    for (int i = 0; i < 2; i++, i2s_data.op_val[0].swap(i2s_data.op_val[1])) {
+      for (auto &encoder : encoders) {
+//        if (!encoder->IsApplicable(record) || !encoder->IsApplicable(colorized_record)) {
+//          continue;
+//        }
+        
+        if (encoder->Encode(i2s_data.op_val[0]).size() != 4) {
+          continue;
+        }
+        
+        if (encoder->Encode(i2s_data.op_val[0]) == encoder->Encode(i2s_data.op_val[1], i2s_data)) {
+          continue;
+        }
+        
+        std::vector<size_t> matching_positions = GetMatchingPositions(inout_sample, encoder->Encode(i2s_data.op_val[0]));
+        
+        // !!!! Pay attention here.
+        for (auto &pos : matching_positions) {
+          if (pos > 53) {
+            break;
+          }
+          if (pos != 29 && pos != 53) {
+            continue;
+          }
+          i2s_mutations.push_back(
+                I2SMutation(pos,
+                            encoder->Encode(i2s_data.op_val[1], i2s_data),
+                            std::vector<uint8_t>(),
+                            i2s_data.i2s_record));
+        }
+      }
+    }
+  }
+  
+//  printf("----- :D Mutations -----\n");
+//  for (auto &mutation : i2s_mutations) {
+//    mutation.PrettyPrint();
+//  }
+//  printf("\n\n");
+  
+  for (auto &mutation : i2s_mutations) {
+    inout_sample->Replace(mutation.from, mutation.from + mutation.bytes.size(), (char *)mutation.bytes.data());
+  }
+}
+
 bool InputToStateMutator::Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
                                  std::vector<Sample *> &all_samples) {
 
@@ -162,7 +224,8 @@ std::vector<I2SMutation> InputToStateMutator::GetMutations(Sample *inout_sample,
           i2s_mutations.push_back(
                 I2SMutation(pos,
                             encoder->Encode(i2s_data.op_val[1], i2s_data),
-                            encoder->Encode(colorized_i2s_data.op_val[1], colorized_i2s_data)));
+                            encoder->Encode(colorized_i2s_data.op_val[1], colorized_i2s_data),
+                            i2s_data.i2s_record));
         }
       }
     }
