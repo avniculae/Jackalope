@@ -101,6 +101,8 @@ void Fuzzer::ParseOptions(int argc, char **argv) {
   crash_reproduce_retries = GetIntOption("-crash_retry", argc, argv, DEFAULT_CRASH_REPRODUCE_RETRIES);
 
   minimize_samples = GetBinaryOption("-minimize_samples", argc, argv, true);
+  
+  colorize_samples = GetBinaryOption("-colorize_samples", argc, argv, true);
 
   keep_samples_in_memory = GetBinaryOption("-keep_samples_in_memory", argc, argv, true);
 
@@ -350,7 +352,7 @@ RunResult Fuzzer::TryReproduceCrash(ThreadContext* tc, Sample* sample, uint32_t 
   return result;
 }
 
-void Fuzzer::SaveSample(ThreadContext *tc, Sample *sample, uint32_t init_timeout, uint32_t timeout, Sample *original_sample) {
+void Fuzzer::SaveSample(ThreadContext *tc, Sample *sample, uint32_t init_timeout, uint32_t timeout, Sample *original_sample, Coverage *stableCoverage) {
   std::vector<Range> ranges;
   if (track_ranges) {
     // need to rerun the sample as the minimizer could have changed ranges
@@ -368,6 +370,19 @@ void Fuzzer::SaveSample(ThreadContext *tc, Sample *sample, uint32_t init_timeout
   char fileindex[20];
   sprintf(fileindex, "%05lld", num_samples);
   string filename = string("sample_") + fileindex;
+  
+//  int sum_offsets = 0;
+//  for (auto &modulecov: *stableCoverage) {
+//    sum_offsets += modulecov.offsets.size();
+//  }
+//  char stroff[20];
+//  sprintf(stroff, "%05lld", sum_offsets);
+//  filename += string("_") + stroff;
+  
+  if (tc->mutator->i2s_mutated) {
+    filename += string("_i2s");
+  }
+  
   string outfile = DirJoin(sample_dir, filename);
   sample->Save(outfile.c_str());
   num_samples++;
@@ -375,7 +390,18 @@ void Fuzzer::SaveSample(ThreadContext *tc, Sample *sample, uint32_t init_timeout
 
   SampleQueueEntry *new_entry = new SampleQueueEntry();
   Sample *new_sample = new Sample(*sample);
+  Sample *colorized_sample = new Sample(*sample);
+  if (stableCoverage) {
+    ColorizeSample(tc, colorized_sample, stableCoverage, init_timeout, timeout);
+  } else {
+    ColorizeSample(tc, colorized_sample);
+  }
+  
+//    new_sample->PrettyPrint("Sample");
+//    colorized_sample->PrettyPrint("Colorized Sample");
+  
   new_entry->sample = new_sample;
+  new_entry->colorized_sample = colorized_sample;
   new_entry->context = tc->mutator->CreateSampleContext(new_entry->sample);
   if(TrackHotOffsets()) {
     if (keep_samples_in_memory) {
@@ -471,7 +497,7 @@ RunResult Fuzzer::RunSample(ThreadContext *tc, Sample *sample, int *has_new_cove
       server_mutex.Unlock();
     }
     
-    SaveSample(tc, sample, init_timeout, timeout, original_sample);
+    SaveSample(tc, sample, init_timeout, timeout, original_sample, &stableCoverage);
   } 
   
   if (!variableCoverage.empty() && server && report_to_server) {
@@ -523,6 +549,49 @@ void Fuzzer::MinimizeSample(ThreadContext *tc, Sample *sample, Coverage* stable_
   delete context;
 }
 
+void Fuzzer::ColorizeSample(ThreadContext *tc, Sample *sample, Coverage* stable_coverage, uint32_t init_timeout, uint32_t timeout) {
+  Colorizer* colorizer = tc->colorizer;
+  
+  if (!colorizer) return;
+
+  ColorizerContext* context = colorizer->CreateContext(sample);
+
+  Sample test_sample = *sample;
+
+  while (1) {
+    if (!colorizer->ColorizeStep(&test_sample, context)) break;
+
+    Coverage test_coverage;
+    RunResult result = RunSampleAndGetCoverage(tc, &test_sample, &test_coverage, init_timeout, timeout);
+
+    if (result != OK) break;
+
+    if (!IsReturnValueInteresting(tc->instrumentation->GetReturnValue())
+        || !CoverageContains(test_coverage, *stable_coverage))
+    {
+      colorizer->ReportFail(&test_sample, context);
+      test_sample = *sample;
+    } else {
+      colorizer->ReportSuccess(&test_sample, context);
+      *sample = test_sample;
+    }
+  }
+
+  delete context;
+}
+
+void Fuzzer::ColorizeSample(ThreadContext *tc, Sample *sample) {
+  tc->instrumentation->EnableFullCoverage();
+  tc->instrumentation->CleanTarget();
+  
+  Coverage stableCoverage;
+  GetStableCoverage(tc, sample, tc->fuzzer->init_timeout, tc->fuzzer->timeout, &stableCoverage);
+  
+  ColorizeSample(tc, sample, &stableCoverage, init_timeout, timeout);
+  
+  tc->instrumentation->DisableFullCoverage();
+  tc->instrumentation->CleanTarget();
+}
 
 int Fuzzer::InterestingSample(ThreadContext *tc, Sample *sample, Coverage *stableCoverage, Coverage *variableCoverage) {
   coverage_mutex.Lock();
@@ -727,7 +796,8 @@ void Fuzzer::FuzzJob(ThreadContext* tc, FuzzerJob* job) {
 
   while (1) {
     Sample mutated_sample = *entry->sample;
-    if (!tc->mutator->Mutate(&mutated_sample, tc->prng, tc->all_samples_local)) break;
+    Sample colorized_sample = *entry->colorized_sample;
+    if (!tc->mutator->Mutate(&mutated_sample, &colorized_sample, tc->prng, tc->all_samples_local)) break;
     if (mutated_sample.size > Sample::max_size) {
       continue;
     }
@@ -779,7 +849,7 @@ void Fuzzer::ProcessSample(ThreadContext* tc, FuzzerJob* job) {
     WARN("Input sample resulted in a hang");
   } else if (!has_new_coverage) {
     if(add_all_inputs) {
-      SaveSample(tc, job->sample, init_timeout, corpus_timeout, NULL);
+      SaveSample(tc, job->sample, init_timeout, corpus_timeout, NULL, NULL);
     } else {
       WARN("Input sample has no new stable coverage");
     }
@@ -884,6 +954,8 @@ void Fuzzer::RestoreState(ThreadContext *tc) {
     string outfile = DirJoin(sample_dir, entry->sample_filename);
     sample->Load(outfile.c_str());
     entry->sample = sample;
+    entry->colorized_sample = new Sample(*sample);
+    ColorizeSample(tc, entry->colorized_sample);
     entry->context = tc->mutator->CreateSampleContext(sample);
     tc->mutator->LoadContext(entry->context, fp);
 
@@ -936,10 +1008,11 @@ Fuzzer::ThreadContext *Fuzzer::CreateThreadContext(int argc, char **argv, int th
   tc->thread_id = thread_id;
   tc->fuzzer = this;
   tc->prng = CreatePRNG(argc, argv, tc);
-  tc->mutator = CreateMutator(argc, argv, tc);
   tc->instrumentation = CreateInstrumentation(argc, argv, tc);
+  tc->mutator = CreateMutator(argc, argv, tc);
   tc->sampleDelivery = CreateSampleDelivery(argc, argv, tc);
   tc->minimizer = CreateMinimizer(argc, argv, tc);
+  tc->colorizer = CreateColorizer(argc, argv, tc);
   tc->range_tracker = CreateRangeTracker(argc, argv, tc);
   tc->coverage_initialized = false;
   
@@ -1038,6 +1111,11 @@ Minimizer* Fuzzer::CreateMinimizer(int argc, char** argv, ThreadContext* tc) {
   return trimmer;
 }
 
+Colorizer* Fuzzer::CreateColorizer(int argc, char** argv, ThreadContext* tc) {
+  SimpleColorizer* colorizer = new SimpleColorizer();
+  return colorizer;
+}
+
 bool Fuzzer::OutputFilter(Sample *original_sample, Sample *output_sample, ThreadContext* tc) {
   // use the original sample
   return false;
@@ -1082,4 +1160,40 @@ void Fuzzer::SampleQueueEntry::Load(FILE *fp) {
   fread(&ranges_size, sizeof(ranges_size), 1, fp);
   ranges.resize(ranges_size);
   fread(ranges.data(), sizeof(ranges[0]), ranges_size, fp);
+}
+
+void Fuzzer::GetStableCoverage(ThreadContext *tc, Sample *sample, uint32_t init_timeout, uint32_t timeout, Coverage *stableCoverage) {
+  Coverage initialCoverage;
+
+  RunResult result = RunSampleAndGetCoverage(tc, sample, &initialCoverage, init_timeout, timeout);
+
+  if (result != OK) return result;
+
+  if (initialCoverage.empty()) return result;
+
+//   printf("found new coverage: \n");
+  // PrintCoverage(initialCoverage);
+
+  // the sample returned new coverage
+
+  *stableCoverage = initialCoverage;
+  Coverage totalCoverage = initialCoverage;
+
+  // have a clean target before retrying the sample
+  if(clean_target_on_coverage) tc->instrumentation->CleanTarget();
+
+  for (int i = 0; i < coverage_reproduce_retries; i++) {
+    Coverage retryCoverage, tmpCoverage;
+
+    result = RunSampleAndGetCoverage(tc, sample, &retryCoverage, init_timeout, timeout);
+    if (result != OK) return result;
+
+    // printf("Retry %d, coverage:\n", i);
+    // PrintCoverage(retryCoverage);
+
+    MergeCoverage(totalCoverage, retryCoverage);
+    CoverageIntersection(*stableCoverage, retryCoverage, tmpCoverage);
+
+    *stableCoverage = tmpCoverage;
+  }
 }

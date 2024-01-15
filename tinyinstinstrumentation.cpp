@@ -45,6 +45,7 @@ RunResult TinyInstInstrumentation::Run(int argc, char **argv, uint32_t init_time
   // else clear only when the target function is reached
   if (!instrumentation->IsTargetFunctionDefined()) {
     instrumentation->ClearCoverage();
+    instrumentation->ClearI2SData();
   }
 
   uint32_t timeout1 = timeout;
@@ -89,6 +90,7 @@ RunResult TinyInstInstrumentation::Run(int argc, char **argv, uint32_t init_time
     }
 
     instrumentation->ClearCoverage();
+    instrumentation->ClearI2SData();
 
     status = instrumentation->Continue(timeout);
   }
@@ -136,6 +138,15 @@ RunResult TinyInstInstrumentation::RunWithCrashAnalysis(int argc, char** argv, u
   return ret;
 }
 
+RunResult TinyInstInstrumentation::RunWithI2SInstrumentation(int argc, char** argv, uint32_t init_timeout, uint32_t timeout) {
+//  instrumentation->Kill();
+  instrumentation->EnableInputToState();
+  RunResult ret = Run(argc, argv, init_timeout, timeout);
+//  instrumentation->Kill();
+  instrumentation->DisableInputToState();
+  return ret;
+}
+
 void TinyInstInstrumentation::CleanTarget() {
   instrumentation->Kill();
 }
@@ -154,6 +165,22 @@ void TinyInstInstrumentation::ClearCoverage() {
 
 void TinyInstInstrumentation::IgnoreCoverage(Coverage &coverage) {
   instrumentation->IgnoreCoverage(coverage);
+}
+
+void TinyInstInstrumentation::ClearI2SData() {
+  instrumentation->ClearI2SData();
+}
+
+void TinyInstInstrumentation::EnableFullCoverage() {
+  instrumentation->EnableFullCoverage();
+}
+
+void TinyInstInstrumentation::DisableFullCoverage() {
+  instrumentation->DisableFullCoverage();
+}
+
+std::vector<I2SData> TinyInstInstrumentation::GetI2SData(bool clear_i2s) {
+  return instrumentation->GetI2SData(clear_i2s);
 }
 
 TinyInstInstrumentation::~TinyInstInstrumentation() {

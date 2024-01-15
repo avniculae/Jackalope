@@ -22,6 +22,9 @@ limitations under the License.
 #include "runresult.h"
 #include "mutex.h"
 #include "range.h"
+#include "fuzzer.h"
+#include "sampledelivery.h"
+#include "inputtostate.h"
 
 #include <vector>
 #include <set>
@@ -51,12 +54,15 @@ public:
   virtual void LoadContext(MutatorSampleContext *context, FILE *fp) { };
   virtual void SaveGlobalState(FILE *fp) { };
   virtual void LoadGlobalState(FILE *fp) { };
-  virtual bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) = 0;
+  virtual bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng, std::vector<Sample *> &all_samples) = 0;
   virtual void NotifyResult(RunResult result, bool has_new_coverage) { }
   virtual bool CanGenerateSample() { return false;  }
   virtual bool GenerateSample(Sample* sample, PRNG* prng) { return false; }
   virtual void AddMutator(Mutator *mutator) { child_mutators.push_back(mutator); }
   virtual void SetRanges(std::vector<Range>* ranges) { }
+  virtual bool IsContinuousMode() { return false; }
+  
+  bool i2s_mutated = false;
 
 protected:
   // a helper function to get a random chunk of sample (with size samplesize)
@@ -163,10 +169,11 @@ public:
 // Mutator that runs another mutator for N rounds
 class NRoundMutator : public HierarchicalMutator {
 public:
-  NRoundMutator(Mutator *child_mutator, size_t num_rounds) {
+  NRoundMutator(Mutator *child_mutator, size_t num_rounds, bool continuous_mode = false) {
     AddMutator(child_mutator);
     this->num_rounds = num_rounds;
     current_round = 0;
+    this->continuous_mode = continuous_mode;
   }
   
   virtual void InitRound(Sample *input_sample, MutatorSampleContext *context) override {
@@ -174,16 +181,47 @@ public:
     current_round = 0;
   }
 
-  virtual bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override {
-    if (current_round == num_rounds) return false;
-    child_mutators[0]->Mutate(inout_sample, prng, all_samples);
+  virtual bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                      std::vector<Sample *> &all_samples) override {
+    if (current_round == num_rounds) {
+      return false;
+    }
+    
+    
+//    printf("round %d\n", current_round);
+//    inout_sample->PrettyPrint("inout 1");
+//    colorized_sample->PrettyPrint("col 1");
+    if (continuous_mode && current_round > 0) {
+      *inout_sample = inout_sample_last;
+      *colorized_sample = colorized_sample_last;
+    }
+    
+//    inout_sample->PrettyPrint("inout 2");
+//    colorized_sample->PrettyPrint("col 2");
+    
+    child_mutators[0]->Mutate(inout_sample, colorized_sample, prng, all_samples);
     current_round++;
+    if (continuous_mode) {
+      inout_sample_last = *inout_sample;
+      colorized_sample_last = *colorized_sample;
+    }
+    
+//    inout_sample->PrettyPrint("inout 3");
+//    colorized_sample->PrettyPrint("col 3");
+    
     return true;
+  }
+  
+  virtual bool IsContinuousMode() override {
+    return continuous_mode;
   }
 
 protected:
   size_t current_round;
   size_t num_rounds;
+  bool continuous_mode;
+  Sample inout_sample_last;
+  Sample colorized_sample_last;
 };
 
 class MutatorSequenceContext : public MutatorSampleContext {
@@ -236,10 +274,11 @@ public:
     HierarchicalMutator::LoadContext(context, fp);
   }
 
-  virtual bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override {
+  virtual bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                      std::vector<Sample *> &all_samples) override {
     while (context->current_mutator_index < child_mutators.size()) {
       Mutator *current_mutator = child_mutators[context->current_mutator_index];
-      bool ret = current_mutator->Mutate(inout_sample, prng, all_samples);
+      bool ret = current_mutator->Mutate(inout_sample, colorized_sample, prng, all_samples);
       if (ret) {
         return true;
       }
@@ -260,11 +299,12 @@ protected:
 
 // mutates using random child mutator
 class SelectMutator : public HierarchicalMutator {
-  virtual bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override {
+  virtual bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                      std::vector<Sample *> &all_samples) override {
     int mutator_index = prng->Rand() % child_mutators.size();
     Mutator *current_mutator = child_mutators[mutator_index];
     last_mutator_index = mutator_index;
-    return current_mutator->Mutate(inout_sample, prng, all_samples);
+    return current_mutator->Mutate(inout_sample, colorized_sample, prng, all_samples);
   }
 
   virtual void NotifyResult(RunResult result, bool has_new_coverage) override {
@@ -305,7 +345,8 @@ public:
     psum += p;
   }
 
-  virtual bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override {
+  virtual bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                      std::vector<Sample *> &all_samples) override {
     double p = prng->RandReal() * psum;
     double sum = 0;
     for (int i = 0; i < child_mutators.size(); i++) {
@@ -313,7 +354,8 @@ public:
       if ((p < sum) || (i == (child_mutators.size() - 1))) {
         last_mutator_index = i;
         Mutator *current_mutator = child_mutators[i];
-        return current_mutator->Mutate(inout_sample, prng, all_samples);
+//        i2s_mutated = (i == child_mutators.size() - 1);
+        return current_mutator->Mutate(inout_sample, colorized_sample, prng, all_samples);
       }
     }
     // unreachable
@@ -363,18 +405,19 @@ public:
     if(repeat_p <= 0) adaptible = true;
   }
 
-  virtual bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override {
+  virtual bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                      std::vector<Sample *> &all_samples) override {
     if(adaptible) {
       repeat_p = adapted_repeat_p;
     }
     
     // run the mutator at least once
     last_num_repeats = 1;
-    bool ret = child_mutators[0]->Mutate(inout_sample, prng, all_samples);
+    bool ret = child_mutators[0]->Mutate(inout_sample, colorized_sample, prng, all_samples);
     if (!ret) return false;
     while (prng->RandReal() < repeat_p) {
       last_num_repeats++;
-      child_mutators[0]->Mutate(inout_sample, prng, all_samples);
+      child_mutators[0]->Mutate(inout_sample, colorized_sample, prng, all_samples);
     }
     return true;
   }
@@ -408,12 +451,14 @@ public:
 
 class ByteFlipMutator : public Mutator {
 public:
-  bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override;
+  bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+              std::vector<Sample *> &all_samples) override;
 };
 
 class ArithmeticMutator : public Mutator {
 public:
-  bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override;
+  bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+              std::vector<Sample *> &all_samples) override;
 private:
   template<typename T>
   bool MutateArithmeticValue(Sample *inout_sample, PRNG *prng, int flip_endian);
@@ -425,7 +470,8 @@ public:
     min_block_size(min_block_size), max_block_size(max_block_size), uniform(uniform)
     { }
 
-  bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override;
+  bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+              std::vector<Sample *> &all_samples) override;
 
 protected:
 
@@ -440,7 +486,8 @@ public:
     min_append(min_append), max_append(max_append)
     { }
 
-  bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override;
+  bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+              std::vector<Sample *> &all_samples) override;
 
 protected:
   int min_append;
@@ -453,7 +500,8 @@ public:
     min_insert(min_insert), max_insert(max_insert)
     { }
 
-  bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override;
+  bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+              std::vector<Sample *> &all_samples) override;
 
 protected:
   int min_insert;
@@ -468,7 +516,8 @@ public:
     min_duplicate_cnt(min_duplicate_cnt), max_duplicate_cnt(max_duplicate_cnt)
   { }
 
-  bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override;
+  bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+              std::vector<Sample *> &all_samples) override;
 
 protected:
   int min_block_size;
@@ -481,7 +530,8 @@ class InterestingValueMutator : public Mutator {
 public:
   InterestingValueMutator(bool use_default_values = false);
 
-  bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override;
+  bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+              std::vector<Sample *> &all_samples) override;
 
 protected:
   std::vector<Sample> interesting_values;
@@ -491,7 +541,8 @@ class SpliceMutator : public Mutator {
 public:
   SpliceMutator(int points, double displacement_p) : points(points), displacement_p(displacement_p) { }
 
-  bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override;
+  bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+              std::vector<Sample *> &all_samples) override;
 
 protected:
   int points;
@@ -521,10 +572,11 @@ public:
     current_round = 0;
   }
 
-  virtual bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override {
+  virtual bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                      std::vector<Sample *> &all_samples) override {
     bool ret;
     if(current_round < num_rounds_deterministic) {
-      ret = deterministic_mutator->Mutate(inout_sample, prng, all_samples);
+      ret = deterministic_mutator->Mutate(inout_sample, colorized_sample, prng, all_samples);
       if(ret) {
         last_mutator = deterministic_mutator;
         current_round++;
@@ -532,7 +584,7 @@ public:
       }
     }
     if(current_round < (num_rounds_deterministic + num_rounds_nondeterministic)) {
-      nondeterministic_mutator->Mutate(inout_sample, prng, all_samples);
+      nondeterministic_mutator->Mutate(inout_sample, colorized_sample, prng, all_samples);
       last_mutator = nondeterministic_mutator;
       current_round++;
       return true;
@@ -614,14 +666,16 @@ public:
 
 class DeterministicByteFlipMutator : public BaseDeterministicMutator {
 public:
-  bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override;
+  bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+              std::vector<Sample *> &all_samples) override;
 };
 
 class DeterministicInterestingValueMutator : public BaseDeterministicMutator {
 public:
   DeterministicInterestingValueMutator(bool use_default_values = false);
   
-  bool Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) override;
+  bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+              std::vector<Sample *> &all_samples) override;
 
 protected:
   std::vector<Sample> interesting_values;
@@ -639,9 +693,172 @@ public:
     this->ranges = ranges;
   }
 
-  virtual bool Mutate(Sample* inout_sample, PRNG* prng, std::vector<Sample*>& all_samples) override;
+  virtual bool Mutate(Sample* inout_sample, Sample *colorized_sample, PRNG *prng,
+                      std::vector<Sample *> &all_samples) override;
 
 protected:
 
   std::vector<Range> *ranges;
 };
+
+class InputToStateMutator : public Mutator {
+public:
+  InputToStateMutator(Fuzzer::ThreadContext *tc);
+  
+  bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+              std::vector<Sample *> &all_samples) override;
+  
+  std::pair<RunResult, std::vector<I2SData>> RunSampleWithI2SInstrumentation(Sample *inout_sample);
+
+  uint64_t GetI2SCode(I2SRecord *record);
+  
+  std::vector<I2SMutation> GetMutations(Sample *inout_sample,
+                                        Sample *colorized_sample,
+                                              std::vector<I2SData> i2s_records,
+                                              std::vector<I2SData> colorized_i2s_records);
+  
+  std::vector<size_t> GetMatchingPositions(Sample *inout_sample,
+                                           std::vector<uint8_t> pattern);
+  
+  bool Match(uint8_t *sample, uint8_t *pattern, int size);
+  bool BranchPath();
+  
+  void Fix(Sample *inout_sample, size_t opt_address);
+  
+protected:
+//  void UpdateI2SBranchInfo(std::vector<I2SData> i2s_data_vector);
+  
+  
+//  struct I2SRecordInfo {
+//    std::bitset<2> hit_branches;
+//    uint64_t fix_tries;
+//
+//    I2SRecordInfo() {
+//      hit_branches = 0x0;
+//      fix_tries = 0;
+//    }
+//  };
+  
+  Fuzzer::ThreadContext *tc;
+  std::vector<Encoder*> encoders;
+//  std::unordered_map<size_t, I2SRecordInfo*> i2s_records_info;
+};
+
+class I2SSelectMutator : public PSelectMutator {
+public:
+  I2SSelectMutator(Mutator *i2s_mutator, double p, size_t opt_address, bool input_to_state_always) : PSelectMutator() {
+    PSelectMutator::AddMutator(i2s_mutator, p);
+    lastI2S_inout_sample = Sample();
+    lastI2S_colorized_sample = Sample();
+    i2s_runs = 0;
+    this->opt_address = opt_address;
+    this->input_to_state_always = input_to_state_always;
+  }
+
+  virtual bool Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                      std::vector<Sample *> &all_samples) override {
+    
+    
+//    if (!last_mutator_index) {
+//      inout_sample->PrettyPrint("received inout");
+//      colorized_sample->PrettyPrint("received colorized");
+//    }
+    
+    if (!last_mutator_index && i2s_runs) {
+      bool res = child_mutators[0]->Mutate(&lastI2S_inout_sample, &lastI2S_colorized_sample, prng, all_samples);
+      i2s_mutated = true;
+      i2s_runs -= 1;
+      
+      *inout_sample = lastI2S_inout_sample;
+      *colorized_sample = lastI2S_colorized_sample;
+      return res;
+    }
+    
+    double p = prng->RandReal() * psum;
+    double sum = 0;
+    for (int i = 0; i < child_mutators.size(); i++) {
+      sum += probabilities[i];
+      if ((p < sum) || (i == (child_mutators.size() - 1))) {
+        last_mutator_index = i;
+        if (!last_mutator_index) {
+          i2s_runs = 10;
+          lastI2S_inout_sample = *inout_sample;
+          lastI2S_colorized_sample = *colorized_sample;
+          return true;
+        }
+        
+        i2s_mutated = false;
+        Mutator *current_mutator = child_mutators[i];
+        
+        Sample inout_sample_copy;
+        if (input_to_state_always) {
+          inout_sample_copy = *inout_sample;
+        }
+        
+        bool res = current_mutator->Mutate(inout_sample, colorized_sample, prng, all_samples);
+        
+        if (input_to_state_always) {
+          if (inout_sample->size < colorized_sample->size) {
+            colorized_sample->Trim(inout_sample->size);
+          }
+          if (inout_sample->size > colorized_sample->size) {
+            colorized_sample->Append(inout_sample->bytes + colorized_sample->size, inout_sample->size - colorized_sample->size);
+          }
+
+          for (int i = 0; i < inout_sample->size; ++i) {
+            if (inout_sample_copy.bytes[i] != inout_sample->bytes[i]) {
+              colorized_sample->bytes[i] = inout_sample->bytes[i];
+            }
+          }
+
+          child_mutators[0]->Mutate(inout_sample, colorized_sample, prng, all_samples);
+        }
+//
+        if (opt_address) {
+          ((InputToStateMutator*)child_mutators[0])->Fix(inout_sample, opt_address);
+        }
+        
+        return res;
+      }
+    }
+    // unreachable
+    return false;
+  }
+
+  virtual void NotifyResult(RunResult result, bool has_new_coverage) override {
+    child_mutators[last_mutator_index]->NotifyResult(result, has_new_coverage);
+    if (!last_mutator_index && result != OK) {
+      i2s_runs = 0;
+    }
+  }
+
+  virtual bool GenerateSample(Sample* sample, PRNG* prng) override {
+    double psum = 0;
+    size_t last_generator = 0;
+    for (size_t i = 0; i < child_mutators.size(); i++) {
+      if (child_mutators[i]->CanGenerateSample()) {
+        psum += probabilities[i];
+        last_generator = i;
+      }
+    }
+    double p = prng->RandReal() * psum;
+    double sum = 0;
+    for (int i = 0; i < child_mutators.size(); i++) {
+      if (!child_mutators[i]->CanGenerateSample()) continue;
+      sum += probabilities[i];
+      if ((p < sum) || (i == last_generator)) {
+        last_mutator_index = i;
+        Mutator* current_mutator = child_mutators[i];
+        return current_mutator->GenerateSample(sample, prng);
+      }
+    }
+    return false;
+  }
+
+protected:
+  int i2s_runs;
+  Sample lastI2S_inout_sample, lastI2S_colorized_sample;
+  bool opt_address;
+  bool input_to_state_always;
+};
+

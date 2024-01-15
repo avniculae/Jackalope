@@ -37,7 +37,8 @@ int Mutator::GetRandBlock(size_t samplesize, size_t minblocksize, size_t maxbloc
   return 1;
 }
 
-bool ByteFlipMutator::Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) {
+bool ByteFlipMutator::Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                             std::vector<Sample *> &all_samples) {
   // printf("In ByteFlipMutator::Mutate\n");
   if (inout_sample->size == 0) return true;
   int charpos = prng->Rand(0, (int)(inout_sample->size - 1));
@@ -46,8 +47,7 @@ bool ByteFlipMutator::Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sampl
   return true;
 }
 
-bool ArithmeticMutator::Mutate(Sample *inout_sample,
-                               PRNG *prng,
+bool ArithmeticMutator::Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
                                std::vector<Sample *> &all_samples)
 {
   int flip_endian = prng->Rand(0, 1);
@@ -84,7 +84,8 @@ bool ArithmeticMutator::MutateArithmeticValue(Sample *inout_sample,
   return true;
 }
 
-bool BlockFlipMutator::Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) {
+bool BlockFlipMutator::Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                              std::vector<Sample *> &all_samples) {
   // printf("In BlockFlipMutator::Mutate\n");
   size_t blocksize, blockpos;
   if (!GetRandBlock(inout_sample->size, min_block_size, max_block_size, &blockpos, &blocksize, prng)) return true;
@@ -101,7 +102,8 @@ bool BlockFlipMutator::Mutate(Sample *inout_sample, PRNG *prng, std::vector<Samp
   return true;
 }
 
-bool AppendMutator::Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) {
+bool AppendMutator::Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                           std::vector<Sample *> &all_samples) {
   // printf("In AppendMutator::Mutate\n");
   size_t old_size = inout_sample->size;
   if (old_size >= Sample::max_size) return true;
@@ -120,7 +122,8 @@ bool AppendMutator::Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample 
   return true;
 }
 
-bool BlockInsertMutator::Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) {
+bool BlockInsertMutator::Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                                std::vector<Sample *> &all_samples) {
   // printf("In BlockInsertMutator::Mutate\n");
   size_t old_size = inout_sample->size;
   if (old_size >= Sample::max_size) return true;
@@ -148,7 +151,8 @@ bool BlockInsertMutator::Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sa
   return true;
 }
 
-bool BlockDuplicateMutator::Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) {
+bool BlockDuplicateMutator::Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                                   std::vector<Sample *> &all_samples) {
   // printf("In BlockDuplicateMutator::Mutate\n");
   if (inout_sample->size >= Sample::max_size) return true;
   size_t blockpos, blocksize;
@@ -178,7 +182,8 @@ void Mutator::AddInterestingValue(char *data, size_t size, std::vector<Sample>& 
   interesting_values.push_back(interesting_sample);
 }
 
-bool InterestingValueMutator::Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) {
+bool InterestingValueMutator::Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                                     std::vector<Sample *> &all_samples) {
   // printf("In InterestingValueMutator::Mutate\n");
   if (interesting_values.empty()) return true;
   Sample *interesting_sample = &interesting_values[prng->Rand(0, (int)interesting_values.size() - 1)];
@@ -232,7 +237,8 @@ template<typename T> void Mutator::AddDefaultInterestingValues(std::vector<Sampl
 }
 
 
-bool SpliceMutator::Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) {
+bool SpliceMutator::Mutate(Sample *inout_sample, Sample *colorized_sample, PRNG *prng,
+                           std::vector<Sample *> &all_samples) {
   if(all_samples.empty()) return true;
 
   bool displace = false;
@@ -395,7 +401,9 @@ MutatorSampleContext *BaseDeterministicMutator::CreateSampleContext(Sample *samp
   return context;
 }
 
-bool DeterministicByteFlipMutator::Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) {
+bool DeterministicByteFlipMutator::Mutate(Sample *inout_sample,
+                                          Sample *colorized_sample, PRNG *prng,
+                                          std::vector<Sample *> &all_samples) {
   size_t pos;
   size_t value;
   
@@ -419,7 +427,9 @@ DeterministicInterestingValueMutator::DeterministicInterestingValueMutator(bool 
   }
 }
 
-bool DeterministicInterestingValueMutator::Mutate(Sample *inout_sample, PRNG *prng, std::vector<Sample *> &all_samples) {
+bool DeterministicInterestingValueMutator::Mutate(Sample *inout_sample,
+                                                  Sample *colorized_sample, PRNG *prng,
+                                                  std::vector<Sample *> &all_samples) {
   size_t pos;
   size_t value_index;
   
@@ -436,11 +446,12 @@ bool DeterministicInterestingValueMutator::Mutate(Sample *inout_sample, PRNG *pr
   return true;
 }
 
-bool RangeMutator::Mutate(Sample* inout_sample, PRNG* prng, std::vector<Sample*>& all_samples) {
+bool RangeMutator::Mutate(Sample* inout_sample, Sample *colorized_sample, PRNG *prng,
+                          std::vector<Sample *> &all_samples) {
   Mutator* child_mutator = child_mutators[0];
 
   if (ranges->empty()) {
-    return child_mutator->Mutate(inout_sample, prng, all_samples);
+    return child_mutator->Mutate(inout_sample, colorized_sample, prng, all_samples);
   }
 
   // pick a range
@@ -454,9 +465,9 @@ bool RangeMutator::Mutate(Sample* inout_sample, PRNG* prng, std::vector<Sample*>
 
   // mutate the cropped sample (if not empty)
   if (inout_sample->size == 0) {
-    return child_mutator->Mutate(inout_sample, prng, all_samples);
+    return child_mutator->Mutate(inout_sample, colorized_sample, prng, all_samples);
   } else {
-    child_mutator->Mutate(&rangesample, prng, all_samples);
+    child_mutator->Mutate(&rangesample, colorized_sample, prng, all_samples);
   }
 
   // put the cropped part back where it belongs

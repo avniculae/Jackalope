@@ -20,7 +20,8 @@ public:
   bool CanGenerateSample() override { return true; }
   bool GenerateSample(Sample* sample, PRNG* prng) override;
   void InitRound(Sample* input_sample, MutatorSampleContext* context) override;
-  bool Mutate(Sample* inout_sample, PRNG* prng, std::vector<Sample*>& all_samples) override;
+  bool Mutate(Sample* inout_sample, Sample *colorised_sample, PRNG *prng,
+              std::vector<Sample *> &all_samples) override;
   MutatorSampleContext* CreateSampleContext(Sample* sample) override;
 
 protected:

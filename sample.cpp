@@ -22,6 +22,8 @@ limitations under the License.
 #include "common.h"
 #include "sample.h"
 #include "mutex.h"
+#include "prng.h"
+#include "mersenne.h"
 
 size_t Sample::max_size = DEFAULT_MAX_SAMPLE_SIZE;
 
@@ -167,6 +169,19 @@ void Sample::Resize(size_t new_size) {
   }
 }
 
+void Sample::Randomize(size_t from, size_t to) {
+  PRNG *prng = new MTPRNG();
+  for (int i = from; i < to; ++i) {
+    bytes[i] = prng->Rand(0, 256);
+  }
+}
+
+void Sample::Replace(size_t from, size_t to, char *bytes) {
+  for (int i = from; i < to; ++i) {
+    this->bytes[i] = bytes[i-from];
+  }
+}
+
 size_t Sample::FindFirstDiff(Sample &other) {
   size_t minsize = size;
   if(other.size < minsize) minsize = other.size;
@@ -280,4 +295,13 @@ size_t SampleTrie::AddSample(Sample *sample) {
   }
   
   sample_trie_mutex.Unlock();
+}
+
+void Sample::PrettyPrint(const char *sample_name) {
+  printf("\n-------%s------\n", sample_name);
+  printf("size %d\n", size);
+  for (int i = 0; i < 100 && i < size; ++i) {
+    printf("0x%02hhx ", bytes[i]);
+  }
+  printf("\n---------------------\n\n");
 }

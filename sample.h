@@ -59,6 +59,12 @@ public:
   void Resize(size_t new_size);
   
   void Crop(size_t from, size_t to, Sample* out);
+  
+  void Randomize(size_t from, size_t to);
+  
+  void Replace(size_t from, size_t to, char *bytes);
+  
+  void PrettyPrint(const char *sample_name);
 
   size_t FindFirstDiff(Sample &other);
 

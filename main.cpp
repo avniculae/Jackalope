@@ -42,6 +42,10 @@ Mutator * BinaryFuzzer::CreateMutator(int argc, char **argv, ThreadContext *tc) 
                                             false);
 
   int nrounds = GetIntOption("-iterations_per_round", argc, argv, 1000);
+  
+  bool input_to_state = GetBinaryOption("-input_to_state", argc, argv, false);
+  size_t opt_address = GetSizeTOption("-opt_address", argc, argv, 0);
+  bool input_to_state_always = GetBinaryOption("-input_to_state_always", argc, argv, false);
 
   // a pretty simple mutation strategy
 
@@ -58,6 +62,9 @@ Mutator * BinaryFuzzer::CreateMutator(int argc, char **argv, ThreadContext *tc) 
   pselect->AddMutator(new BlockFlipMutator(1, 64, true), 0.1);
   pselect->AddMutator(new BlockDuplicateMutator(1, 128, 1, 8), 0.1);
   pselect->AddMutator(new InterestingValueMutator(true), 0.1);
+//  if (input_to_state) {
+//    pselect->AddMutator(new InputToStateMutator(tc), 0.001);
+//  }
 
   // SpliceMutator is not compatible with -keep_samples_in_memory=0
   // as it requires other samples in memory besides the one being
@@ -76,6 +83,8 @@ Mutator * BinaryFuzzer::CreateMutator(int argc, char **argv, ThreadContext *tc) 
     pselect_or_range = range_mutator;
   }
 
+  Mutator *mutator;
+
   // potentially repeat the mutation
   // (do two or more mutations in a single cycle
   // 0 indicates that actual mutation rate will be adapted
@@ -84,9 +93,7 @@ Mutator * BinaryFuzzer::CreateMutator(int argc, char **argv, ThreadContext *tc) 
   if(!use_deterministic_mutations && !deterministic_only) {
     
     // and have nrounds of this per sample cycle
-    NRoundMutator *mutator = new NRoundMutator(repeater, nrounds);
-    return mutator;
-    
+    mutator = new NRoundMutator(repeater, nrounds);
   } else {
     
     MutatorSequence *deterministic_sequence = new MutatorSequence(false, true);
@@ -105,15 +112,21 @@ Mutator * BinaryFuzzer::CreateMutator(int argc, char **argv, ThreadContext *tc) 
 
     // do 1000 rounds of derministic mutations, will switch to nondeterministic mutations
     // once deterministic mutator is "done"
-    DtermininsticNondeterministicMutator *mutator = 
+    mutator =
       new DtermininsticNondeterministicMutator(
         deterministic_sequence, 
         deterministic_rounds,
         repeater,
         nondeterministic_rounds);
-
+  }
+  
+  if (!input_to_state) {
     return mutator;
   }
+  
+  I2SSelectMutator *i2s_select_mutator = new I2SSelectMutator(new InputToStateMutator(tc), 0.001, opt_address, input_to_state_always);
+  i2s_select_mutator->AddMutator(mutator, 0.999);
+  return i2s_select_mutator;
 }
 
 class GrammarFuzzer : public Fuzzer {

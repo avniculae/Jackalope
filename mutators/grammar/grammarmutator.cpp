@@ -91,7 +91,8 @@ void GrammarMutator::InitRound(Sample* input_sample, MutatorSampleContext* conte
 	current_sample = ((GrammarMutatorContext *)context)->tree;
 }
 
-bool GrammarMutator::Mutate(Sample* inout_sample, PRNG* prng, std::vector<Sample*>& all_samples) {
+bool GrammarMutator::Mutate(Sample* inout_sample, Sample *colorised_sample, PRNG *prng,
+                            std::vector<Sample *> &all_samples) {
 	Grammar::TreeNode new_sample;
 
 	int mutator_success = 0;
